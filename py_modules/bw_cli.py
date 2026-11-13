@@ -56,11 +56,13 @@ class BwCli:
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
-                raise BwCliError(f"bw {args[0]} timed out")
+                raise BwCliError(f"(bw {args[0]}: timed out)")
 
         if process.returncode != 0:
             # stderr never contains secrets we passed in; safe to log.
-            raise BwCliError(f"bw {args[0]} failed: {stderr.decode(errors='replace').strip()}")
+            lines = [l.strip() for l in stderr.decode(errors="replace").splitlines() if l.strip()]
+            detail = lines[-1][:200] if lines else f"exit code {process.returncode}"
+            raise BwCliError(f"(bw {args[0]}: {detail})")
 
         return stdout.decode()
 
@@ -95,7 +97,7 @@ class BwCli:
         )
         session = session.strip()
         if not session:
-            raise BwCliError("bw unlock returned no session key")
+            raise BwCliError("(bw unlock: no session key returned)")
         return session
 
     async def sync(self, session: str):

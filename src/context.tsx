@@ -31,6 +31,15 @@ import { pasteViaKeyboardInput } from "./copy-utils";
 
 let securityToken = "";
 
+// Decky rejects backend calls with { pythonTraceback } whose last line is
+// "<ExceptionType>: <message>". Extract the bw detail the backend appended.
+const getBackendErrorDetail = (e: unknown): string | null => {
+  const traceback = (e as { pythonTraceback?: string } | null)?.pythonTraceback;
+  const lastLine = traceback?.trim().split("\n").pop() ?? "";
+  const match = lastLine.match(/\(bw .*\)\s*$/);
+  return match ? match[0] : null;
+};
+
 interface PasswordManagerContextValue {
   currentEntries: Entry[] | null;
   currentEntry: CurrentEntry | null;
@@ -102,7 +111,7 @@ export const PasswordMangerContextProvider = (
       console.error(e);
       toaster.toast({
         title: "DeckWarden Error",
-        body: errorMessage,
+        body: [errorMessage, getBackendErrorDetail(e)].filter(Boolean).join(" "),
       });
       if (resetEntries) {
         await setCurrentEntries(null);

@@ -1,7 +1,8 @@
 import os
+import sys
 import asyncio
 
-from bw_cli import BwCli
+from bw_cli import BwCli, BwCliError
 from bw_installer import BwInstaller
 from password_manager import PasswordManager
 
@@ -27,10 +28,16 @@ class Plugin:
         self.pm = PasswordManager(decky.logger, self.bw)
 
     async def _handle_error(self, error_message: str, exec_info: bool, close_password_manager: bool):
+        # Must be called from inside an except block.
+        cause = sys.exc_info()[1]
         if close_password_manager:
             await self.close_password_manager()
         decky.logger.error(error_message, exc_info=exec_info)
-        raise ValueError(error_message)
+        # bw's own error text (from stderr) never contains secrets we passed
+        # in, so surface it to the UI; hide details of any other exception.
+        if isinstance(cause, BwCliError):
+            raise ValueError(f"{error_message} {cause}") from None
+        raise ValueError(error_message) from None
 
     async def check_setup_state(self):
         try:
