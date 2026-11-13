@@ -15,6 +15,7 @@ import {
   logoutBe,
   syncBe,
   getEntryTotpBe,
+  loginPasswordBe,
 } from "./backend";
 import React from "react";
 import {
@@ -23,9 +24,11 @@ import {
   CurrentEntryDetails,
   CurrentEntryDisplayMode,
   Entry,
+  PasswordLoginResult,
   PasteableDetail,
   SetupState,
   TotpCode,
+  TwoFactorMethod,
 } from "./interfaces";
 
 import { useJsContextState } from "./hooks";
@@ -60,7 +63,13 @@ interface PasswordManagerContextValue {
   ) => Promise<void>;
   installBw: () => Promise<void>;
   configureServer: (url: string) => Promise<void>;
-  login: (clientId: string, clientSecret: string) => Promise<void>;
+  login: (clientId: string, clientSecret: string) => Promise<boolean>;
+  loginWithPassword: (
+    email: string,
+    password: string,
+    method: TwoFactorMethod | null,
+    code: string | null
+  ) => Promise<PasswordLoginResult>;
   logout: () => Promise<void>;
 }
 
@@ -78,7 +87,8 @@ const PasswordManagerContext = createContext<PasswordManagerContextValue>({
   toggleCurrentEntry: async () => {},
   installBw: async () => {},
   configureServer: async () => {},
-  login: async () => {},
+  login: async () => false,
+  loginWithPassword: async () => "error",
   logout: async () => {},
 });
 
@@ -265,14 +275,43 @@ export const PasswordMangerContextProvider = (
     await reloadSetupState();
   };
 
+  // Returns whether login succeeded, so the modal can stay open on errors
   const login = async (clientId: string, clientSecret: string) => {
+    let success = false;
     await handleErrors(
       "Failed to log in. Check the API key and server URL.",
       async () => {
         await loginApiKeyBe(clientId, clientSecret);
-      }
+        success = true;
+      },
+      false
     );
     await reloadSetupState();
+    return success;
+  };
+
+  // Logs in and unlocks in one step; reports when a 2FA code is needed
+  const loginWithPassword = async (
+    email: string,
+    password: string,
+    method: TwoFactorMethod | null,
+    code: string | null
+  ): Promise<PasswordLoginResult> => {
+    let result: PasswordLoginResult = "error";
+    await handleErrors(
+      "Failed to log in.",
+      async () => {
+        const [state, token] = await loginPasswordBe(email, password, method, code);
+        if (state === "unlocked") {
+          securityToken = token;
+          await reloadEntries();
+        }
+        result = state as PasswordLoginResult;
+      },
+      false
+    );
+    await reloadSetupState();
+    return result;
   };
 
   const logout = async () => {
@@ -298,6 +337,7 @@ export const PasswordMangerContextProvider = (
     installBw,
     configureServer,
     login,
+    loginWithPassword,
     logout,
   };
 

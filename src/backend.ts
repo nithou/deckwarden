@@ -32,6 +32,10 @@ export const installBwBe = callable<[], void>("install_bw");
 
 export const configureServerBe = callable<[string], void>("configure_server");
 export const loginApiKeyBe = callable<[string, string], void>("login_apikey");
+export const loginPasswordBe = callable<
+  [string, string, number | null, string | null],
+  [string, string]
+>("login_password");
 export const logoutBe = callable<[], void>("logout");
 
 export const mapBeEntriesToEntries = (beEntries: BeEntry[]): Entry[] => {

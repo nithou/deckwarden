@@ -154,7 +154,7 @@ const ServerSteps = () => {
 };
 
 const LoginSteps = () => {
-  const { setupState, login } = usePasswordManagerContext();
+  const { setupState, login, loginWithPassword } = usePasswordManagerContext();
 
   const loggedIn = isLoggedIn(setupState);
 
@@ -163,12 +163,18 @@ const LoginSteps = () => {
       <h4>
         <strong>3. Log in: {isDoneText(loggedIn)}</strong>
       </h4>
-      Log in once with your <strong>personal API key</strong>. Afterwards you only need
-      your <strong>master password</strong> to unlock.
+      Log in once with your <strong>email and master password</strong> (with optional
+      two-step code), or with your <strong>personal API key</strong>. Afterwards you only
+      need your <strong>master password</strong> to unlock.
       <ButtonItem
         layout="below"
         disabled={!setupState?.bwInstalled || loggedIn}
-        onClick={() => showModal(<LoginModal onLogin={login} />, findSP())}
+        onClick={() =>
+          showModal(
+            <LoginModal onLoginApiKey={login} onLoginPassword={loginWithPassword} />,
+            findSP()
+          )
+        }
       >
         <ButtonItemIconContent icon={<FaSignInAlt />}>Log in</ButtonItemIconContent>
       </ButtonItem>

@@ -1,11 +1,29 @@
-import { Button, findSP, ModalRoot, ModalRootProps } from "@decky/ui";
+import {
+  Button,
+  DropdownItem,
+  findSP,
+  ModalRoot,
+  ModalRootProps,
+  TextField,
+} from "@decky/ui";
 import { useState } from "react";
-import { FaClipboard, FaSignInAlt } from "react-icons/fa";
+import { FaClipboard, FaEnvelope, FaSignInAlt } from "react-icons/fa";
 import { toaster } from "@decky/api";
 import { ModalContent } from "../shared";
 import { PasswordInput } from "../password-input";
+import { PasswordLoginResult, TwoFactorMethod } from "../../interfaces";
 
+type LoginMode = "password" | "apikey";
 type ApiKeyField = "clientId" | "clientSecret";
+
+const EMAIL_METHOD: TwoFactorMethod = 1;
+
+const twoFactorOptions: { data: TwoFactorMethod | null; label: string }[] = [
+  { data: null, label: "None" },
+  { data: 0, label: "Authenticator app" },
+  { data: 1, label: "Email" },
+  { data: 3, label: "YubiKey OTP" },
+];
 
 const readClipboard = async (): Promise<string> => {
   // The modal lives in the Big Picture window, which holds focus; fall back
@@ -29,13 +47,76 @@ export const parseApiKeyText = (text: string) => {
   return { clientId, clientSecret };
 };
 
+const Hint = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ marginTop: "10px", marginBottom: "10px", whiteSpace: "normal" }}>
+    {children}
+  </div>
+);
+
 export interface LoginModalProps extends ModalRootProps {
-  onLogin: (clientId: string, clientSecret: string) => Promise<void>;
+  onLoginApiKey: (clientId: string, clientSecret: string) => Promise<boolean>;
+  onLoginPassword: (
+    email: string,
+    password: string,
+    method: TwoFactorMethod | null,
+    code: string | null
+  ) => Promise<PasswordLoginResult>;
 }
 
 export const LoginModal = (props: LoginModalProps) => {
+  const [mode, setMode] = useState<LoginMode>("password");
+
+  // Email + password
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [method, setMethod] = useState<TwoFactorMethod | null>(null);
+  const [code, setCode] = useState<string>("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+
+  // API key
   const [clientId, setClientId] = useState<string>("");
   const [clientSecret, setClientSecret] = useState<string>("");
+
+  const handlePasswordResult = (result: PasswordLoginResult, sentEmail: boolean) => {
+    if (result === "code_required") {
+      setMessage(
+        sentEmail
+          ? "A code was sent to your email address. Enter it below."
+          : "Two-step login is enabled on this account. Select your method and enter the code."
+      );
+    } else if (result === "method_required") {
+      setMessage("Your account has several two-step methods. Select the one to use.");
+    } else {
+      setMessage(null);
+    }
+    return result === "unlocked";
+  };
+
+  const sendEmailCode = async () => {
+    setIsSendingCode(true);
+    try {
+      const result = await props.onLoginPassword(email, password, EMAIL_METHOD, null);
+      if (handlePasswordResult(result, result === "code_required")) {
+        props.closeModal?.();
+      }
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const onConfirm = async () => {
+    if (mode === "apikey") {
+      return await props.onLoginApiKey(clientId, clientSecret);
+    }
+    const result = await props.onLoginPassword(
+      email,
+      password,
+      method,
+      method !== null && code.trim() !== "" ? code : null
+    );
+    return handlePasswordResult(result, false);
+  };
 
   const pasteInto = async (field: ApiKeyField) => {
     let text: string;
@@ -79,42 +160,121 @@ export const LoginModal = (props: LoginModalProps) => {
     </Button>
   );
 
+  const canConfirm =
+    mode === "apikey"
+      ? clientId.trim() !== "" && clientSecret.trim() !== ""
+      : email.trim() !== "" && password !== "" && (method === null || code.trim() !== "");
+
   return (
     <ModalRoot onCancel={() => props.closeModal?.()}>
       <ModalContent
         icon={<FaSignInAlt />}
-        title="Log in with API Key"
-        onConfirm={() => props.onLogin(clientId, clientSecret)}
-        canConfirm={clientId.trim() !== "" && clientSecret.trim() !== ""}
+        title="Log in to Vaultwarden"
+        onConfirm={onConfirm}
+        canConfirm={canConfirm && !isSendingCode}
         closeModal={props.closeModal}
       >
-        {(isLoading) => (
-          <>
-            <div style={{ marginBottom: "10px" }}>
-              Find your personal API key in the Vaultwarden web vault under{" "}
-              <strong>Account Settings → Security → Keys → View API Key</strong>. Use{" "}
-              <FaClipboard /> to paste from the clipboard. Pasting the whole dialog text
-              fills both fields.
-            </div>
-            <PasswordInput
-              label="client_id"
-              disabled={isLoading}
-              value={clientId}
-              bIsPassword={true}
-              onChange={(e) => setClientId(e.target.value)}
-              extraControls={pasteButton("clientId", isLoading)}
-            />
-            <div style={{ marginTop: "10px" }} />
-            <PasswordInput
-              label="client_secret"
-              disabled={isLoading}
-              value={clientSecret}
-              bIsPassword={true}
-              onChange={(e) => setClientSecret(e.target.value)}
-              extraControls={pasteButton("clientSecret", isLoading)}
-            />
-          </>
-        )}
+        {(isLoading) => {
+          const disabled = isLoading || isSendingCode;
+          return (
+            <>
+              <DropdownItem
+                label="Login method"
+                disabled={disabled}
+                rgOptions={[
+                  { data: "password", label: "Email & master password" },
+                  { data: "apikey", label: "Personal API key" },
+                ]}
+                selectedOption={mode}
+                onChange={(option) => {
+                  setMode(option.data);
+                  setMessage(null);
+                }}
+              />
+
+              {mode === "password" && (
+                <>
+                  <TextField
+                    label="Email"
+                    disabled={disabled}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                  <div style={{ marginTop: "10px" }} />
+                  <PasswordInput
+                    label="Master password"
+                    disabled={disabled}
+                    value={password}
+                    bIsPassword={true}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <DropdownItem
+                    label="Two-step login"
+                    disabled={disabled}
+                    rgOptions={twoFactorOptions}
+                    selectedOption={method}
+                    onChange={(option) => setMethod(option.data)}
+                  />
+                  {method !== null && (
+                    <TextField
+                      label="Two-step code"
+                      disabled={disabled}
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                    />
+                  )}
+                  {method === EMAIL_METHOD && (
+                    <Button
+                      style={{ marginTop: "10px" }}
+                      className="DialogButton"
+                      disabled={disabled || email.trim() === "" || password === ""}
+                      onClick={sendEmailCode}
+                    >
+                      <FaEnvelope /> {isSendingCode ? "Sending..." : "Send code by email"}
+                    </Button>
+                  )}
+                  {message && (
+                    <Hint>
+                      <strong>{message}</strong>
+                    </Hint>
+                  )}
+                  <Hint>
+                    Logging in also unlocks the vault. FIDO2/WebAuthn keys and Duo are not
+                    supported here: use the <strong>personal API key</strong> instead.
+                  </Hint>
+                </>
+              )}
+
+              {mode === "apikey" && (
+                <>
+                  <Hint>
+                    Find your personal API key in the Vaultwarden web vault under{" "}
+                    <strong>Account Settings → Security → Keys → View API Key</strong>.
+                    Use <FaClipboard /> to paste from the clipboard. Pasting the whole
+                    dialog text fills both fields.
+                  </Hint>
+                  <PasswordInput
+                    label="client_id"
+                    disabled={disabled}
+                    value={clientId}
+                    bIsPassword={true}
+                    onChange={(e) => setClientId(e.target.value)}
+                    extraControls={pasteButton("clientId", disabled)}
+                  />
+                  <div style={{ marginTop: "10px" }} />
+                  <PasswordInput
+                    label="client_secret"
+                    disabled={disabled}
+                    value={clientSecret}
+                    bIsPassword={true}
+                    onChange={(e) => setClientSecret(e.target.value)}
+                    extraControls={pasteButton("clientSecret", disabled)}
+                  />
+                </>
+              )}
+            </>
+          );
+        }}
       </ModalContent>
     </ModalRoot>
   );

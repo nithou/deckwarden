@@ -67,7 +67,8 @@ export interface ModalContentProps {
   icon?: React.ReactNode;
   title: React.ReactNode;
   children: (isLoading: boolean) => React.ReactNode;
-  onConfirm: () => Promise<void>;
+  // Resolve to false to keep the modal open (e.g. another step is needed)
+  onConfirm: () => Promise<void | boolean>;
   canConfirm: boolean;
   closeModal?: () => void;
 }
@@ -77,7 +78,11 @@ export const ModalContent = (props: ModalContentProps) => {
 
   const onConfirm = async () => {
     setIsLoading(true);
-    await props.onConfirm();
+    const result = await props.onConfirm();
+    if (result === false) {
+      setIsLoading(false);
+      return;
+    }
     props.closeModal?.();
   };
 

@@ -34,3 +34,12 @@ export type CurrentEntry = Entry & {
 };
 
 export type BwInstallState = "initial" | "installing" | "done" | "error";
+
+// bw two-step login provider types that work without a browser
+export type TwoFactorMethod = 0 | 1 | 3;
+
+export type PasswordLoginResult =
+  | "unlocked"
+  | "code_required"
+  | "method_required"
+  | "error";

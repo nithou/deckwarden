@@ -10,7 +10,7 @@ If you use KeePassXC rather than Vaultwarden/Bitwarden, use DeckPass. Please con
 
 ## Features
 - Connects to any **Vaultwarden** / Bitwarden server URL
-- Logs in once with your **personal API key**; after that you only unlock with your **master password**
+- Logs in once with your **email and master password** (with optional two-step code) or your **personal API key**; after that you only unlock with your **master password**
 - Lists all **login items**, grouped by folder, with a **search field**
 - Shows credentials and **pastes them into games**
 - Shows and pastes **TOTP codes** (standard `otpauth://`, raw base32 and Steam Guard `steam://` secrets)
@@ -24,7 +24,9 @@ DeckWarden is **read-only**: create and edit entries in the Vaultwarden web vaul
 3. Follow the **Setup Guide**:
     1. **Install the Bitwarden CLI**. This downloads a pinned, checksum-verified release (`bw-oss-linux`) from GitHub into the plugin's runtime directory
     2. **Set your server URL**, e.g. `https://vault.example.com`
-    3. **Log in with your personal API key** (`client_id` and `client_secret`). Find it in the web vault under *Account Settings → Security → Keys → View API Key*. Each field has a clipboard button; pasting the whole dialog text fills both fields
+    3. **Log in**, using one of two methods:
+        - **Email & master password**. If two-step login is enabled, pick the method (authenticator app, email or YubiKey OTP) and enter the code; for email, use *Send code by email* first. Logging in this way also unlocks the vault
+        - **Personal API key** (`client_id` and `client_secret`), from the web vault under *Account Settings → Security → Keys → View API Key*. Each field has a clipboard button; pasting the whole dialog text fills both fields. Use this if your account uses **FIDO2/WebAuthn or Duo**, which the CLI cannot handle, or if the server asks for **new device verification**
 4. Click **Unlock Vault** and enter your master password
 
 ### Self-signed certificates
@@ -39,7 +41,7 @@ If your Vaultwarden server uses a certificate from a private CA, copy the CA cer
 ## Security considerations
 1. DeckWarden **does not store the master password or the API key**
     1. The API key is only used for the one-time `bw login --apikey`. After that the CLI keeps its own refresh token in its data directory (`~/homebrew/settings/DeckWarden/bw-data`), together with the **encrypted** vault cache, as with any Bitwarden client
-2. All secrets are passed to the CLI **through environment variables of the child process, never through command-line arguments**, so they do not show up in the process list
+2. The master password and API key are passed to the CLI **through environment variables of the child process, never through command-line arguments**, so they do not show up in the process list. The CLI has no such option for the email address and the one-time two-step code, so these two are passed as arguments, after validation
 3. After unlocking, the **session key** and the decrypted **login items** are kept **only in memory** of the Python backend. TOTP codes are computed in the backend; TOTP secrets are never sent to the frontend. Locking the vault, unloading the plugin or any backend error clears them and runs `bw lock`
 4. DeckWarden deliberately does **not** use `bw serve`, because it exposes an unauthenticated REST API on localhost
 5. After unlocking, the frontend receives a **security token** (`secrets.token_urlsafe(32)`) that every backend call needs, checked with `hmac.compare_digest`. The token is stored in a scoped variable of the plugin's JavaScript module

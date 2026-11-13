@@ -31,8 +31,14 @@ class PasswordManager:
     async def open(self, password: str):
         if self.is_open():
             await self.close()
+        return await self.open_with_session(await self.bw.unlock(password))
 
-        self._session = await self.bw.unlock(password)
+    async def open_with_session(self, session: str):
+        """Take over an unlocked bw session (from unlock or login --raw)."""
+        if self.is_open():
+            await self.close()
+
+        self._session = session
         try:
             await self._load_items()
         except Exception:

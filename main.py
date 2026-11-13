@@ -74,6 +74,39 @@ class Plugin:
         except Exception:
             await self._handle_error("Failed to log in!", True, False)
 
+    async def login_password(self, email: str, password: str, method: int | None, code: str | None):
+        """
+        Returns [state, security_token]:
+        - ["unlocked", token]: logged in and vault unlocked in one step
+        - ["code_required", ""]: two-step login needed (for Email, the code
+          has just been sent)
+        - ["method_required", ""]: several 2FA methods, none chosen
+        """
+        email = email.strip()
+        code = (code or "").replace(" ", "").strip() or None
+        try:
+            try:
+                session = await asyncio.wait_for(
+                    self.bw.login_password(email, password, method, code), 120
+                )
+            except BwCliError as e:
+                if e.detail == "Code is required." and code is None:
+                    return ["code_required", ""]
+                if e.detail == "Code is required.":
+                    # A code was given but bw still wants one: this is the
+                    # "new device verification" prompt, which bw cannot take
+                    # non-interactively.
+                    raise BwCliError("login", "New device verification required. Use the API key login instead.")
+                if e.detail.startswith("Login failed. No provider selected"):
+                    return ["method_required", ""]
+                raise
+
+            decky.logger.info("Logged in with email and password, loading vault")
+            token = await asyncio.wait_for(self.pm.open_with_session(session), 120)
+            return ["unlocked", token]
+        except Exception:
+            await self._handle_error("Failed to log in!", False, True)
+
     async def logout(self):
         try:
             await self.close_password_manager()

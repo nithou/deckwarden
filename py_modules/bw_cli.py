@@ -1,11 +1,22 @@
 import asyncio
 import json
 import os
+import re
 from logging import Logger
 
 
 class BwCliError(Exception):
-    pass
+    def __init__(self, command: str, detail: str):
+        super().__init__(f"(bw {command}: {detail})")
+        self.command = command
+        self.detail = detail
+
+
+# bw two-step login provider types usable without a browser
+TWO_FACTOR_METHODS = {0: "Authenticator", 1: "Email", 3: "YubiKey OTP"}
+
+_SAFE_CODE = re.compile(r"^[A-Za-z0-9]{4,64}$")
+_SAFE_EMAIL = re.compile(r"^[^\s@-][^\s@]*@[^\s@]+$")
 
 
 class BwCli:
@@ -56,13 +67,13 @@ class BwCli:
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
-                raise BwCliError(f"(bw {args[0]}: timed out)")
+                raise BwCliError(args[0], "timed out")
 
         if process.returncode != 0:
             # stderr never contains secrets we passed in; safe to log.
             lines = [l.strip() for l in stderr.decode(errors="replace").splitlines() if l.strip()]
             detail = lines[-1][:200] if lines else f"exit code {process.returncode}"
-            raise BwCliError(f"(bw {args[0]}: {detail})")
+            raise BwCliError(args[0], detail)
 
         return stdout.decode()
 
@@ -86,6 +97,31 @@ class BwCli:
             timeout=60,
         )
 
+    async def login_password(self, email: str, password: str,
+                             method: int | None, code: str | None) -> str:
+        """Log in with email + master password; returns a session key.
+
+        The master password goes via env. Email and the one-time 2FA code
+        have to go via argv (bw has no env option for them); both are
+        validated so they cannot be parsed as options.
+        """
+        if not _SAFE_EMAIL.match(email):
+            raise BwCliError("login", "Invalid email address")
+        args = ["login", email, "--passwordenv", "BW_PASSWORD", "--raw"]
+        if method is not None:
+            if method not in TWO_FACTOR_METHODS:
+                raise BwCliError("login", "Unsupported two-step login method")
+            args += ["--method", str(method)]
+        if code:
+            if method is None or not _SAFE_CODE.match(code):
+                raise BwCliError("login", "Invalid two-step login code")
+            args += ["--code", code]
+
+        session = (await self._run(args, {"BW_PASSWORD": password}, timeout=90)).strip()
+        if not session:
+            raise BwCliError("login", "no session key returned")
+        return session
+
     async def logout(self):
         await self._run(["logout"])
 
@@ -97,7 +133,7 @@ class BwCli:
         )
         session = session.strip()
         if not session:
-            raise BwCliError("(bw unlock: no session key returned)")
+            raise BwCliError("unlock", "no session key returned")
         return session
 
     async def sync(self, session: str):
