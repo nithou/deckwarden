@@ -1,47 +1,27 @@
 import { PanelSection, PanelSectionRow, ButtonItem, showModal, findSP } from "@decky/ui";
-import { FaDatabase, FaDesktop, FaKey, FaLock, FaLockOpen, FaPlus } from "react-icons/fa";
+import { FaKey, FaLock, FaLockOpen, FaSignOutAlt, FaSync } from "react-icons/fa";
+import { useState } from "react";
 import { usePasswordManagerContext } from "../context";
 import { EntryComponent } from "./entry";
 import { ButtonItemIconContent } from "./shared";
-import { SetupGuide } from "./setup-guide";
-import { FileSelectionType, openFilePicker } from "@decky/api";
-import { EntryModal } from "./modals/entry-modal";
-import { CreateDatabaseModal } from "./modals/create-database-modal";
+import { isLoggedIn, SetupGuide } from "./setup-guide";
 import { OpenDatabaseModal } from "./modals/open-database-modal";
 
+const centeredTextStyle: React.CSSProperties = {
+  textAlign: "center",
+  marginTop: "20px",
+  marginBottom: "20px",
+  whiteSpace: "normal",
+  wordBreak: "break-word",
+};
+
 export const PasswordManagerClosed = () => {
-  const {
-    openPasswordManager,
-    setupState,
-    editPasswordManager,
-    selectDatabase,
-    createDatabase,
-  } = usePasswordManagerContext();
+  const { openPasswordManager, setupState, logout } = usePasswordManagerContext();
 
-  const isSetup = setupState?.areDependenciesSetup && !!setupState?.databasePath;
-
-  const onSelectDatabase = async () => {
-    await openFilePicker(
-      FileSelectionType.FILE,
-      setupState?.userHomePath || "/home/deck",
-      true,
-      true,
-      () => true,
-      ["kdbx"]
-    ).then(async (res) => {
-      await selectDatabase(res.path);
-    });
-  };
+  const loggedIn = isLoggedIn(setupState);
 
   const openDatabaseModal = (
     <OpenDatabaseModal onOpen={(password) => openPasswordManager(password)} />
-  );
-
-  const createDatabaseModal = (
-    <CreateDatabaseModal
-      onCreateDatabase={createDatabase}
-      userHomePath={setupState?.userHomePath || "/home/deck"}
-    />
   );
 
   return (
@@ -58,122 +38,79 @@ export const PasswordManagerClosed = () => {
           <FaKey size={60}></FaKey>
         </div>
 
-        {!setupState?.areDependenciesSetup && (
-          <div
-            style={{
-              textAlign: "center",
-              marginTop: "20px",
-              marginBottom: "20px",
-            }}
-          >
-            <strong>DeckPass is not fully setup yet.</strong> Please follow the Setup
+        {!loggedIn && (
+          <div style={centeredTextStyle}>
+            <strong>DeckWarden is not fully setup yet.</strong> Please follow the Setup
             Guide to complete the required steps.
           </div>
         )}
 
-        {!!setupState?.areDependenciesSetup && !setupState?.databasePath && (
-          <div
-            style={{
-              textAlign: "center",
-              marginTop: "20px",
-              marginBottom: "20px",
-            }}
-          >
-            <strong>No database</strong> is selected yet.
-          </div>
-        )}
-
-        {isSetup && (
-          <div
-            style={{
-              textAlign: "center",
-              marginTop: "20px",
-              marginBottom: "20px",
-              whiteSpace: "normal",
-              wordBreak: "break-word",
-            }}
-          >
-            <div>Selected Database</div>
+        {loggedIn && (
+          <div style={centeredTextStyle}>
             <div>
-              <strong>{setupState?.databasePath?.split("/")?.pop()}</strong>
+              <strong>{setupState?.userEmail}</strong>
             </div>
+            <div>{setupState?.serverUrl}</div>
           </div>
         )}
 
         <ButtonItem
           layout="below"
-          disabled={!isSetup}
+          disabled={!loggedIn}
           onClick={() => showModal(openDatabaseModal, findSP())}
         >
           <ButtonItemIconContent icon={<FaLockOpen />}>
-            Unlock Database
+            Unlock Vault
           </ButtonItemIconContent>
         </ButtonItem>
 
-        <ButtonItem
-          layout="below"
-          disabled={!setupState?.areDependenciesSetup}
-          onClick={() => onSelectDatabase()}
-        >
-          <ButtonItemIconContent icon={<FaDatabase />}>
-            Select Database
-          </ButtonItemIconContent>
-        </ButtonItem>
+        {loggedIn && (
+          <ButtonItem layout="below" onClick={() => logout()}>
+            <ButtonItemIconContent icon={<FaSignOutAlt />}>Log out</ButtonItemIconContent>
+          </ButtonItem>
+        )}
 
-        <ButtonItem
-          layout="below"
-          disabled={!setupState?.areDependenciesSetup}
-          onClick={() => showModal(createDatabaseModal, findSP())}
-        >
-          <ButtonItemIconContent icon={<FaPlus />}>Create Database</ButtonItemIconContent>
-        </ButtonItem>
-
-        <ButtonItem
-          layout="below"
-          disabled={!setupState?.areDependenciesSetup}
-          onClick={() => editPasswordManager()}
-        >
-          <ButtonItemIconContent icon={<FaDesktop />}>
-            Open KeePassXC
-          </ButtonItemIconContent>
-        </ButtonItem>
-
-        <SetupGuide />
+        <SetupGuide initiallyOpen={setupState !== null && !loggedIn} />
       </PanelSectionRow>
     </PanelSection>
   );
 };
 
 export const PasswordManagerOpened = () => {
-  const { currentEntries, closePasswordManager, createEntry, generateRandomPassword } =
-    usePasswordManagerContext();
+  const { currentEntries, closePasswordManager, syncVault } = usePasswordManagerContext();
+  const [isSyncing, setIsSyncing] = useState(false);
 
   if (!currentEntries) {
     return <div />;
   }
 
-  const createEntryModal = (
-    <EntryModal
-      currentEntries={currentEntries}
-      mode="create"
-      onCreateEntry={createEntry}
-      onGenerateRandomPassword={generateRandomPassword}
-    />
-  );
+  const onSync = async () => {
+    setIsSyncing(true);
+    try {
+      await syncVault();
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   return (
     <PanelSection>
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={() => closePasswordManager()}>
-          <ButtonItemIconContent icon={<FaLock />}>Lock Database</ButtonItemIconContent>
+          <ButtonItemIconContent icon={<FaLock />}>Lock Vault</ButtonItemIconContent>
         </ButtonItem>
-        <ButtonItem layout="below" onClick={() => showModal(createEntryModal, findSP())}>
-          <ButtonItemIconContent icon={<FaPlus />}>Create Entry</ButtonItemIconContent>
+        <ButtonItem layout="below" disabled={isSyncing} onClick={onSync}>
+          <ButtonItemIconContent icon={<FaSync />}>
+            {isSyncing ? "Syncing..." : "Sync"}
+          </ButtonItemIconContent>
         </ButtonItem>
         <div style={{ marginTop: "20px" }}></div>
+        {currentEntries.length === 0 && (
+          <div style={centeredTextStyle}>No login items in this vault.</div>
+        )}
       </PanelSectionRow>
       {currentEntries.map((entry) => (
-        <EntryComponent key={entry.path} entry={entry} />
+        <EntryComponent key={entry.id} entry={entry} />
       ))}
     </PanelSection>
   );

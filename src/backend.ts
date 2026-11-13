@@ -1,53 +1,39 @@
 import { callable } from "@decky/api";
 import {
+  BwInstallState,
   CurrentEntryDetails,
   Entry,
-  KeepassFlatpakInstallState,
-  SettingsKey,
   SetupState,
+  VaultStatus,
 } from "./interfaces";
+
+type BeEntry = [string, string];
+type BeSetupState = [boolean, VaultStatus, string | null, string | null];
 
 export const openPasswordManagerBe = callable<[string], string>("open_password_manager");
 export const closePasswordManagerBe = callable<[], void>("close_password_manager");
+export const syncBe = callable<[string], void>("sync");
 
-export const getEntriesBe = callable<[string], string[]>("get_entries");
+export const getEntriesBe = callable<[string], BeEntry[]>("get_entries");
 export const getEntryDetailsBe = callable<[string, string], [string, string]>(
   "get_entry_details"
 );
 
-export const generateRandomPasswordBe = callable<[string], string>(
-  "generate_random_password"
+export const checkSetupStateBe = callable<[], BeSetupState>("check_setup_state");
+
+export const checkBwInstallStateBe = callable<[], BwInstallState>(
+  "check_bw_install_state"
 );
-export const createEntryBe = callable<[string, string, string, string], void>(
-  "create_entry"
-);
-export const editEntryBe = callable<[string, string, string, string, string], void>(
-  "edit_entry"
-);
-export const removeEntryBe = callable<[string, string], void>("remove_entry");
+export const installBwBe = callable<[], void>("install_bw");
 
-export const createDatabaseBe = callable<[string, string], void>("create_database");
+export const configureServerBe = callable<[string], void>("configure_server");
+export const loginApiKeyBe = callable<[string, string], void>("login_apikey");
+export const logoutBe = callable<[], void>("logout");
 
-export const checkSetupStateBe = callable<[], [boolean, string | null, string]>(
-  "check_setup_state"
-);
-
-export const checkKeepassFlatpakInstallStateBe = callable<[], KeepassFlatpakInstallState>(
-  "check_keepass_flatpak_install_state"
-);
-export const installKeepassFlatpakBe = callable<[], void>("install_keepass_flatpak");
-
-export const getSettingBe = callable<[SettingsKey], any>("get_setting");
-export const setSettingBe = callable<[SettingsKey, any], void>("set_setting");
-
-export const doesFileExistBe = callable<[string], boolean>("does_file_exist");
-
-export const mapBeEntriesToEntries = (beEntries: string[]): Entry[] => {
+export const mapBeEntriesToEntries = (beEntries: BeEntry[]): Entry[] => {
   return beEntries
-    .map((entry) => {
-      const entryParts = entry.split("/");
-
-      const path = entry;
+    .map(([id, path]) => {
+      const entryParts = path.split("/");
 
       const title = entryParts.slice(-1)[0];
 
@@ -55,6 +41,7 @@ export const mapBeEntriesToEntries = (beEntries: string[]): Entry[] => {
         entryParts.length > 1 ? `${entryParts.slice(0, -1).join("/")}/` : undefined;
 
       return {
+        id,
         path,
         title,
         folderPath,
@@ -83,14 +70,13 @@ export const mapBeEntryDetailsToCurrentEntryDetails = (
   };
 };
 
-export const mapBeSetupStateToSetupState = (
-  beSetupState: [boolean, string | null, string]
-): SetupState => {
-  const [areDependenciesSetup, databasePath, userHomePath] = beSetupState;
+export const mapBeSetupStateToSetupState = (beSetupState: BeSetupState): SetupState => {
+  const [bwInstalled, status, serverUrl, userEmail] = beSetupState;
 
   return {
-    areDependenciesSetup,
-    databasePath,
-    userHomePath,
+    bwInstalled,
+    status,
+    serverUrl,
+    userEmail,
   };
 };

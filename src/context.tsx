@@ -8,63 +8,47 @@ import {
   mapBeEntryDetailsToCurrentEntryDetails,
   mapBeSetupStateToSetupState,
   checkSetupStateBe,
-  installKeepassFlatpakBe,
-  checkKeepassFlatpakInstallStateBe,
-  setSettingBe,
-  removeEntryBe,
-  generateRandomPasswordBe,
-  createEntryBe,
-  createDatabaseBe,
-  editEntryBe,
+  installBwBe,
+  checkBwInstallStateBe,
+  configureServerBe,
+  loginApiKeyBe,
+  logoutBe,
+  syncBe,
 } from "./backend";
 import React from "react";
 import {
+  BwInstallState,
   CurrentEntry,
   CurrentEntryDetails,
   CurrentEntryDisplayMode,
   Entry,
-  KeepassFlatpakInstallState,
   SetupState,
 } from "./interfaces";
 
 import { useJsContextState } from "./hooks";
 import { toaster } from "@decky/api";
-import { runKeepassShortcut } from "./shortcut-utils";
 import { pasteViaKeyboardInput } from "./copy-utils";
 
 let securityToken = "";
-
-export type UiState = "loading" | "error" | "done";
 
 interface PasswordManagerContextValue {
   currentEntries: Entry[] | null;
   currentEntry: CurrentEntry | null;
   currentEntryDetails: CurrentEntryDetails | null;
   setupState: SetupState | null;
-  keepassFlatpakInstallState: KeepassFlatpakInstallState;
-  selectDatabase: (databasePath: string) => Promise<void>;
+  bwInstallState: BwInstallState;
   openPasswordManager: (password: string) => Promise<void>;
-  editPasswordManager: () => Promise<void>;
   closePasswordManager: () => Promise<void>;
+  syncVault: () => Promise<void>;
   pasteEntryDetail: (detail: keyof CurrentEntryDetails) => Promise<void>;
   toggleCurrentEntry: (
     newCurrentEntry: Entry | null,
     displayMode: CurrentEntryDisplayMode
   ) => Promise<void>;
-  getEntryDetails: (entryPath: string) => Promise<CurrentEntryDetails>;
-  installKeepassFlatpak: () => Promise<void>;
-
-  createEntry: (title: string, username: string, password: string) => Promise<void>;
-  editEntry: (
-    title: string,
-    newTitle: string,
-    username: string,
-    password: string
-  ) => Promise<void>;
-  generateRandomPassword: () => Promise<string>;
-  removeEntry: (entry: Entry) => Promise<void>;
-
-  createDatabase: (databasePath: string, password: string) => Promise<void>;
+  installBw: () => Promise<void>;
+  configureServer: (url: string) => Promise<void>;
+  login: (clientId: string, clientSecret: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const PasswordManagerContext = createContext<PasswordManagerContextValue>({
@@ -72,20 +56,16 @@ const PasswordManagerContext = createContext<PasswordManagerContextValue>({
   currentEntry: null,
   currentEntryDetails: null,
   setupState: null,
-  keepassFlatpakInstallState: "initial",
-  selectDatabase: async () => {},
+  bwInstallState: "initial",
   openPasswordManager: async () => {},
-  editPasswordManager: async () => {},
   closePasswordManager: async () => {},
+  syncVault: async () => {},
   pasteEntryDetail: async () => {},
   toggleCurrentEntry: async () => {},
-  getEntryDetails: async () => ({ username: "", password: "" }),
-  installKeepassFlatpak: async () => {},
-  createEntry: async () => {},
-  editEntry: async () => {},
-  generateRandomPassword: async () => "abc",
-  removeEntry: async () => {},
-  createDatabase: async () => {},
+  installBw: async () => {},
+  configureServer: async () => {},
+  login: async () => {},
+  logout: async () => {},
 });
 
 export interface PasswordMangerContextProviderProps {
@@ -109,21 +89,26 @@ export const PasswordMangerContextProvider = (
 
   const [setupState, setSetupState] = useState<SetupState | null>(null);
 
-  const [keepassFlatpakInstallState, setKeepassFlatpakInstallState] =
-    useState<KeepassFlatpakInstallState>("initial");
+  const [bwInstallState, setBwInstallState] = useState<BwInstallState>("initial");
 
-  const handleErrors = async (errorMessage: string, callback: () => Promise<void>) => {
+  const handleErrors = async (
+    errorMessage: string,
+    callback: () => Promise<void>,
+    resetEntries = true
+  ) => {
     try {
       await callback();
     } catch (e) {
       console.error(e);
       toaster.toast({
-        title: "DeckPass Error",
+        title: "DeckWarden Error",
         body: errorMessage,
       });
-      await setCurrentEntries(null);
-      await setCurrentEntry(null);
-      setCurrentEntryDetails(null);
+      if (resetEntries) {
+        await setCurrentEntries(null);
+        await setCurrentEntry(null);
+        setCurrentEntryDetails(null);
+      }
     }
   };
 
@@ -134,8 +119,14 @@ export const PasswordMangerContextProvider = (
     return entries;
   };
 
+  const reloadSetupState = async () => {
+    await handleErrors("Could not evaluate setup state", async () => {
+      setSetupState(mapBeSetupStateToSetupState(await checkSetupStateBe()));
+    });
+  };
+
   const openPasswordManager = async (password: string) =>
-    handleErrors("Failed to open database", async () => {
+    handleErrors("Failed to unlock vault", async () => {
       securityToken = await openPasswordManagerBe(password);
       await reloadEntries();
     });
@@ -147,8 +138,22 @@ export const PasswordMangerContextProvider = (
     securityToken = "";
   };
 
-  const getEntryDetails = async (entryPath: string): Promise<CurrentEntryDetails> => {
-    const detailsBe = await getEntryDetailsBe(securityToken, entryPath);
+  const syncVault = async () =>
+    handleErrors(
+      "Failed to sync vault",
+      async () => {
+        await syncBe(securityToken);
+        const entries = await reloadEntries();
+        if (currentEntry && !entries.some((e) => e.id === currentEntry.id)) {
+          await setCurrentEntry(null);
+        }
+        toaster.toast({ title: "DeckWarden", body: "Vault synced" });
+      },
+      false
+    );
+
+  const getEntryDetails = async (entryId: string): Promise<CurrentEntryDetails> => {
+    const detailsBe = await getEntryDetailsBe(securityToken, entryId);
 
     return mapBeEntryDetailsToCurrentEntryDetails(detailsBe);
   };
@@ -158,15 +163,9 @@ export const PasswordMangerContextProvider = (
       return;
     }
 
-    const details = await getEntryDetails(currentEntry.path);
+    const details = await getEntryDetails(currentEntry.id);
 
-    const detailToPaste = details[detail];
-
-    pasteViaKeyboardInput(detailToPaste);
-  };
-
-  const editPasswordManager = async () => {
-    await runKeepassShortcut(setupState?.databasePath);
+    pasteViaKeyboardInput(details[detail]);
   };
 
   const toggleCurrentEntry = async (
@@ -174,25 +173,14 @@ export const PasswordMangerContextProvider = (
     displayMode: CurrentEntryDisplayMode
   ) => {
     if (!newCurrentEntry) {
-      setCurrentEntry(null);
+      await setCurrentEntry(null);
       return;
     }
 
-    if (displayMode === "copy") {
-      await setCurrentEntry({
-        ...newCurrentEntry,
-        displayMode,
-      });
-      return;
-    }
-
-    if (displayMode === "full") {
-      await setCurrentEntry({
-        ...newCurrentEntry,
-        displayMode,
-      });
-      return;
-    }
+    await setCurrentEntry({
+      ...newCurrentEntry,
+      displayMode,
+    });
   };
 
   useEffect(() => {
@@ -202,36 +190,30 @@ export const PasswordMangerContextProvider = (
     }
 
     handleErrors("Failed to get details", async () => {
-      setCurrentEntryDetails(await getEntryDetails(currentEntry.path));
+      setCurrentEntryDetails(await getEntryDetails(currentEntry.id));
     });
   }, [currentEntry, currentEntry?.displayMode]);
 
-  const reloadSetupState = async () => {
-    await handleErrors("Could not evaluate setup state", async () => {
-      setSetupState(mapBeSetupStateToSetupState(await checkSetupStateBe()));
-    });
-  };
-
   useEffect(() => {
     reloadSetupState();
-  }, [keepassFlatpakInstallState]);
+  }, [bwInstallState]);
 
-  const installKeepassFlatpak = async () => {
-    await handleErrors("Failed to install Keepass Flatpak", async () => {
-      setKeepassFlatpakInstallState("installing");
-      await installKeepassFlatpakBe();
+  const installBw = async () => {
+    await handleErrors("Failed to install Bitwarden CLI", async () => {
+      setBwInstallState("installing");
+      await installBwBe();
     });
   };
 
   useEffect(() => {
-    if (keepassFlatpakInstallState !== "installing") {
+    if (bwInstallState !== "installing") {
       return;
     }
 
     const refreshMs = 2 * 1000;
     let interval = setInterval(async () => {
-      const installState = await checkKeepassFlatpakInstallStateBe();
-      setKeepassFlatpakInstallState(installState);
+      const installState = await checkBwInstallStateBe();
+      setBwInstallState(installState);
       if (["initial", "done", "error"].includes(installState)) {
         clearInterval(interval);
       }
@@ -240,70 +222,37 @@ export const PasswordMangerContextProvider = (
     return () => {
       clearInterval(interval);
     };
-  }, [keepassFlatpakInstallState, setKeepassFlatpakInstallState]);
+  }, [bwInstallState, setBwInstallState]);
 
   useEffect(() => {
-    handleErrors("Failed to check Keepass Flatpak install state", async () => {
-      const installState = await checkKeepassFlatpakInstallStateBe();
-      setKeepassFlatpakInstallState(installState);
+    handleErrors("Failed to check Bitwarden CLI install state", async () => {
+      setBwInstallState(await checkBwInstallStateBe());
     });
   }, []);
 
-  const selectDatabase = async (databasePath: string) => {
-    let resultingPath: string | null = databasePath;
-    if (!databasePath.endsWith(".kdbx")) {
-      resultingPath = null;
-    }
-
-    await setSettingBe("databasePath", resultingPath);
+  const configureServer = async (url: string) => {
+    await handleErrors("Failed to configure server", async () => {
+      await configureServerBe(url);
+    });
     await reloadSetupState();
   };
 
-  const createEntry = async (title: string, username: string, password: string) => {
-    await handleErrors("Failed to create entry", async () => {
-      await createEntryBe(securityToken, title, username, password);
-      const entries = await reloadEntries();
-      const createdEntry = entries?.find((entry) => entry.path === title);
-      if (!createdEntry) {
-        return;
+  const login = async (clientId: string, clientSecret: string) => {
+    await handleErrors(
+      "Failed to log in. Check the API key and server URL.",
+      async () => {
+        await loginApiKeyBe(clientId, clientSecret);
       }
-      await toggleCurrentEntry(createdEntry, "copy");
-    });
+    );
+    await reloadSetupState();
   };
 
-  const editEntry = async (
-    title: string,
-    newTitle: string,
-    username: string,
-    password: string
-  ) => {
-    await handleErrors("Failed to edit entry", async () => {
-      await editEntryBe(securityToken, title, newTitle, username, password);
-      if(title !== newTitle) {
-        await toggleCurrentEntry(null, "copy");
-      }
-      await reloadEntries();
+  const logout = async () => {
+    await handleErrors("Failed to log out", async () => {
+      await logoutBe();
+      securityToken = "";
     });
-  };
-
-  const generateRandomPassword = async () => {
-    const result = await generateRandomPasswordBe(securityToken);
-    return result;
-  };
-
-  const removeEntry = async (entry: Entry) => {
-    await handleErrors("Failed to remove entry", async () => {
-      await removeEntryBe(securityToken, entry.path);
-      await reloadEntries();
-      await toggleCurrentEntry(null, "copy");
-    });
-  };
-
-  const createDatabase = async (databasePath: string, password: string) => {
-    await handleErrors("Failed to create database", async () => {
-      await createDatabaseBe(databasePath, password);
-      await selectDatabase(databasePath);
-    });
+    await reloadSetupState();
   };
 
   const value: PasswordManagerContextValue = {
@@ -311,20 +260,16 @@ export const PasswordMangerContextProvider = (
     currentEntry,
     currentEntryDetails,
     setupState,
-    keepassFlatpakInstallState,
-    selectDatabase,
+    bwInstallState,
     openPasswordManager,
-    editPasswordManager,
     closePasswordManager,
+    syncVault,
     pasteEntryDetail,
     toggleCurrentEntry,
-    getEntryDetails,
-    installKeepassFlatpak,
-    createEntry,
-    editEntry,
-    generateRandomPassword,
-    removeEntry,
-    createDatabase,
+    installBw,
+    configureServer,
+    login,
+    logout,
   };
 
   return (

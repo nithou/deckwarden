@@ -23,9 +23,9 @@ export const OpenDatabaseModal = (props: OpenDatabaseModal) => {
     >
       <ModalContent
         icon={<FaLockOpen />}
-        title="Unlock Database"
+        title="Unlock Vault"
         onConfirm={onConfirm}
-        canConfirm={true}
+        canConfirm={password !== ""}
         closeModal={props.closeModal}
       >
         {(isLoading) => (
@@ -33,6 +33,7 @@ export const OpenDatabaseModal = (props: OpenDatabaseModal) => {
             disabled={isLoading}
             value={password}
             bIsPassword={true}
+            label="Master password"
             onChange={(e) => setPassword(e.target.value)}
           ></PasswordInput>
         )}

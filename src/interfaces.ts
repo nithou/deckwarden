@@ -1,10 +1,14 @@
+export type VaultStatus = "unauthenticated" | "locked" | "unlocked";
+
 export type SetupState = {
-  areDependenciesSetup: boolean;
-  databasePath: string | null;
-  userHomePath: string;
+  bwInstalled: boolean;
+  status: VaultStatus;
+  serverUrl: string | null;
+  userEmail: string | null;
 };
 
 export type Entry = {
+  id: string;
   path: string;
   title: string;
   folderPath?: string;
@@ -21,6 +25,4 @@ export type CurrentEntry = Entry & {
   displayMode: CurrentEntryDisplayMode;
 };
 
-export type KeepassFlatpakInstallState = "initial" | "installing" | "done" | "error";
-
-export type SettingsKey = "keepassShortcutAppId" | "databasePath";
+export type BwInstallState = "initial" | "installing" | "done" | "error";

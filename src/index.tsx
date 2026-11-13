@@ -14,8 +14,8 @@ function Content() {
 
 export default definePlugin(() => {
   return {
-    name: "DeckPass",
-    titleView: <div className={staticClasses.Title}>DeckPass</div>,
+    name: "DeckWarden",
+    titleView: <div className={staticClasses.Title}>DeckWarden</div>,
     content: <Content />,
     icon: <FaKey />,
     onDismount() {},

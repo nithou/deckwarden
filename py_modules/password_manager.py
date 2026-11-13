@@ -1,114 +1,94 @@
-from logging import Logger
-import secrets
-from keypass_cli import KeypassCli
-import os
 import hmac
+import secrets
+from logging import Logger
 
-from collections import Counter
-from utils import escape_cli_input
+from bw_cli import BwCli
+
+# Bitwarden cipher type for login items
+LOGIN_ITEM_TYPE = 1
+
 
 class PasswordManager:
 
     logger: Logger
 
-    keepass_cli: KeypassCli
+    bw: BwCli
 
-    security_token = ""
-
-    def __init__(self, logger: Logger):
+    def __init__(self, logger: Logger, bw: BwCli):
         self.logger = logger
-        self.keepass_cli = KeypassCli(self.logger)
-
-    def _check_database_path(self, database_path: str | None):
-        if database_path is None:
-            return None
-
-        path = os.path.abspath(database_path)
-
-        if not os.path.exists(path):
-            return None
-
-        return database_path
-
-    def _remove_last_newline(self, s: str) -> str:
-        return s[:-1] if s.endswith("\n") else s
+        self.bw = bw
+        self.security_token = ""
+        self._session = ""
+        self._items: dict[str, dict] = {}
 
     def is_open(self):
-        return self.keepass_cli.is_open
-    
-    def are_dependencies_setup(self):
-        return self.keepass_cli.is_setup()
+        return self._session != ""
 
-    async def open(self, database_path: str, password: str):
-        await self.keepass_cli.open(database_path, password)
+    def are_dependencies_setup(self):
+        return self.bw.is_setup()
+
+    async def open(self, password: str):
+        if self.is_open():
+            await self.close()
+
+        self._session = await self.bw.unlock(password)
+        try:
+            await self._load_items()
+        except Exception:
+            await self.close()
+            raise
 
         self._generate_security_token()
         return self.security_token
 
-    async def get_entries(self, security_token: str):
-        
+    async def sync(self, security_token: str):
         self._validate_security_token(security_token)
+        await self._load_items()
 
-        entries = await self.keepass_cli.run_command("ls -R -f", 0.3)
+    async def _load_items(self):
+        await self.bw.sync(self._session)
+        folders = await self.bw.list_folders(self._session)
+        items = await self.bw.list_items(self._session)
 
-        entries = [self._remove_last_newline(e) for e in entries]
-        entries = [e for e in entries if not e.endswith("/")]
-        entries = [e for e in entries if not e.endswith("[empty]")]
-        entryCounts = Counter(entries)
-        entries = [entry for entry in entries if entryCounts[entry] == 1]
-        entries.sort()
+        folder_names = {f["id"]: f["name"] for f in folders if f.get("id")}
 
+        self._items = {}
+        for item in items:
+            if item.get("type") != LOGIN_ITEM_TYPE or item.get("deletedDate"):
+                continue
+            folder = folder_names.get(item.get("folderId"))
+            name = item.get("name") or "(unnamed)"
+            login = item.get("login") or {}
+            self._items[item["id"]] = {
+                "path": f"{folder}/{name}" if folder else name,
+                "username": login.get("username") or "",
+                "password": login.get("password") or "",
+            }
+
+    async def get_entries(self, security_token: str):
+        self._validate_security_token(security_token)
+        entries = [[item_id, item["path"]] for item_id, item in self._items.items()]
+        entries.sort(key=lambda e: e[1].lower())
         return entries
 
-    async def get_entry_details(self, security_token: str, entry_name: str):
-
+    async def get_entry_details(self, security_token: str, entry_id: str):
         self._validate_security_token(security_token)
+        item = self._items.get(entry_id)
+        if item is None:
+            raise ValueError("Unknown entry!")
+        return [item["username"], item["password"]]
 
-        escaped_entry_name = escape_cli_input(entry_name)
-        entry_details = await self.keepass_cli.run_command(
-            f"show {escaped_entry_name} -s -a UserName -a Password", 0.3
-        )
-
-        username = self._remove_last_newline(entry_details[0])
-        password = self._remove_last_newline(entry_details[1])
-
-        return [username, password]
-
-    async def generate_random_password(self, security_token: str):
-        self._validate_security_token(security_token)
-
-        result = await self.keepass_cli.run_command(f"generate -L 32 -l -U -n -s", 0.3)
-
-        return self._remove_last_newline(result[0])
-
-    async def create_entry(self, security_token: str, entry_name: str, username: str, password: str):
-        self._validate_security_token(security_token)
-
-        await self.keepass_cli.create_entry(entry_name, username, password)
-
-    async def edit_entry(self, security_token: str, entry_name: str, new_entry_name: str, username: str, password: str):
-        self._validate_security_token(security_token)
-
-        await self.keepass_cli.edit_entry(entry_name, new_entry_name, username, password)
-
-    async def remove_entry(self, security_token: str, entry_name: str):
-        self._validate_security_token(security_token)
-
-        escaped_entry_name = escape_cli_input(entry_name)
-        await self.keepass_cli.run_command(f"rm {escaped_entry_name}", 0.5)
-
-    async def create_database(self, database_path: str, password: str):
-        await self.keepass_cli.create_database(database_path, password)
-
-    def close(self):
-        self.entries = []
+    async def close(self):
+        was_open = self.is_open()
+        self._items = {}
         self.security_token = ""
-        self.keepass_cli.close()
+        self._session = ""
+        if was_open:
+            await self.bw.lock()
 
     def _generate_security_token(self):
         self.security_token = secrets.token_urlsafe(32)
 
     def _validate_security_token(self, security_token: str):
-        is_valid = hmac.compare_digest(self.security_token, security_token)
-        if not is_valid:
+        if not self.security_token or not hmac.compare_digest(self.security_token, security_token):
             raise ValueError("Invalid security token!")

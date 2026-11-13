@@ -1,4 +1,4 @@
-import { ButtonItem, DialogButton, Field, findSP, Focusable, showModal } from "@decky/ui";
+import { ButtonItem, DialogButton, Field, Focusable } from "@decky/ui";
 import {
   FaCaretDown,
   FaCaretRight,
@@ -8,15 +8,11 @@ import {
   FaFolder,
   FaEyeSlash,
   FaInfoCircle,
-  FaEdit,
-  FaTrash,
 } from "react-icons/fa";
 import { usePasswordManagerContext } from "../context";
 import { Entry } from "../interfaces";
 import { ButtonContentOverflow, ButtonItemIconContent } from "./shared";
 import { useEffect, useRef } from "react";
-import { EntryModal } from "./modals/entry-modal";
-import { RemoveEntryModal } from "./modals/remove-entry-modal";
 
 interface DetailDescriptionProps {
   children?: React.ReactNode;
@@ -74,7 +70,7 @@ export interface EntryComponentProps {
 export const EntryComponent = (props: EntryComponentProps) => {
   const { toggleCurrentEntry, currentEntry } = usePasswordManagerContext();
 
-  const isCurrentEntry = currentEntry?.path === props.entry.path;
+  const isCurrentEntry = currentEntry?.id === props.entry.id;
 
   const ref = useRef<HTMLDivElement>(null);
 
@@ -122,17 +118,8 @@ export const EntryComponent = (props: EntryComponentProps) => {
 };
 
 export const EntryContent = () => {
-  const {
-    pasteEntryDetail,
-    currentEntryDetails,
-    currentEntry,
-    removeEntry,
-    editEntry,
-    getEntryDetails,
-    generateRandomPassword,
-    toggleCurrentEntry,
-    currentEntries,
-  } = usePasswordManagerContext();
+  const { pasteEntryDetail, currentEntryDetails, currentEntry, toggleCurrentEntry } =
+    usePasswordManagerContext();
 
   if (!currentEntry) {
     return <div />;
@@ -140,34 +127,6 @@ export const EntryContent = () => {
 
   const style: React.CSSProperties = {
     paddingLeft: "20px",
-  };
-
-  const onEditEntry = async () => {
-    const entryDetails = await getEntryDetails(currentEntry.path);
-
-    const editModal = (
-      <EntryModal
-        mode="edit"
-        currentEntries={currentEntries}
-        entry={currentEntry}
-        entryDetails={entryDetails}
-        onEditEntry={editEntry}
-        onGenerateRandomPassword={generateRandomPassword}
-      />
-    );
-
-    showModal(editModal, findSP());
-  };
-
-  const onRemoveEntry = async () => {
-    const removeModal = (
-      <RemoveEntryModal
-        entry={currentEntry}
-        onRemoveEntry={() => removeEntry(currentEntry)}
-      />
-    );
-
-    showModal(removeModal, findSP());
   };
 
   return (
@@ -216,19 +175,6 @@ export const EntryContent = () => {
                   <FaEyeSlash></FaEyeSlash>
                 </DialogButton>
               )}
-              <DialogButton
-                style={{ minWidth: "0", paddingLeft: "0", paddingRight: "0" }}
-                className="DialogButton Secondary"
-                onClick={onEditEntry}
-              >
-                <FaEdit></FaEdit>
-              </DialogButton>
-              <DialogButton
-                style={{ minWidth: "0", paddingLeft: "0", paddingRight: "0" }}
-                onClick={onRemoveEntry}
-              >
-                <FaTrash></FaTrash>
-              </DialogButton>
             </Focusable>
           </Field>
         </>

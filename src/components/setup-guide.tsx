@@ -1,4 +1,4 @@
-import { ButtonItem, Focusable } from "@decky/ui";
+import { ButtonItem, findSP, Focusable, showModal } from "@decky/ui";
 import { useState } from "react";
 import {
   FaCaretDown,
@@ -6,21 +6,28 @@ import {
   FaCheckCircle,
   FaDownload,
   FaExclamationTriangle,
+  FaServer,
+  FaSignInAlt,
   FaSpinner,
 } from "react-icons/fa";
 import { usePasswordManagerContext } from "../context";
 import { ButtonItemIconContent } from "./shared";
-import { KeepassFlatpakInstallState, SetupState } from "../interfaces";
+import { BwInstallState, SetupState } from "../interfaces";
+import { ServerModal } from "./modals/server-modal";
+import { LoginModal } from "./modals/login-modal";
 
-const deckPassGithubUrl = "https://github.com/Teppichseite/DeckPass";
+const projectGithubUrl = "https://github.com/nithou/deckwarden";
 
 const isDoneIcon = (isDone: boolean) => (isDone ? "✅" : "❌");
 
 const isDoneText = (isDone: boolean) =>
   isDone ? `${isDoneIcon(isDone)} Done` : `${isDoneIcon(isDone)} Not done`;
 
-export const SetupGuide = () => {
-  const [showGuide, setShowGuide] = useState(false);
+export const isLoggedIn = (setupState: SetupState | null) =>
+  !!setupState?.bwInstalled && setupState.status !== "unauthenticated";
+
+export const SetupGuide = (props: { initiallyOpen?: boolean }) => {
+  const [showGuide, setShowGuide] = useState(!!props.initiallyOpen);
 
   return (
     <div>
@@ -37,14 +44,16 @@ export const SetupGuide = () => {
 
       {showGuide && (
         <div style={{ marginTop: "20px" }}>
-          <KeypassInstallSteps />
+          <BwInstallSteps />
           <div style={{ marginTop: "30px" }} />
-          <DatabaseCreateSteps />
+          <ServerSteps />
+          <div style={{ marginTop: "30px" }} />
+          <LoginSteps />
           <Focusable
             onActivate={() => {}}
             style={{ overflowWrap: "break-word", marginTop: "30px" }}
           >
-            Please visit <strong>{deckPassGithubUrl}</strong> if you encounter any issues.
+            Please visit <strong>{projectGithubUrl}</strong> if you encounter any issues.
           </Focusable>
         </div>
       )}
@@ -54,28 +63,27 @@ export const SetupGuide = () => {
 
 const getInstallState = (
   setupState: SetupState | null,
-  keepassFlatpakInstallState: KeepassFlatpakInstallState
-): KeepassFlatpakInstallState => {
-  if (setupState?.areDependenciesSetup) {
+  bwInstallState: BwInstallState
+): BwInstallState => {
+  if (setupState?.bwInstalled) {
     return "done";
   }
 
-  if (keepassFlatpakInstallState === "done" && !setupState?.areDependenciesSetup) {
+  if (bwInstallState === "done" && !setupState?.bwInstalled) {
     return "initial";
   }
 
-  return keepassFlatpakInstallState;
+  return bwInstallState;
 };
 
-const KeypassInstallSteps = () => {
-  const { setupState, installKeepassFlatpak, keepassFlatpakInstallState } =
-    usePasswordManagerContext();
+const BwInstallSteps = () => {
+  const { setupState, installBw, bwInstallState } = usePasswordManagerContext();
 
-  const installState = getInstallState(setupState, keepassFlatpakInstallState);
+  const installState = getInstallState(setupState, bwInstallState);
 
   const isInstallDisabled = ["done", "installing"].includes(installState);
 
-  const buttonStates: Record<KeepassFlatpakInstallState, [React.ReactNode, string]> = {
+  const buttonStates: Record<BwInstallState, [React.ReactNode, string]> = {
     done: [<FaCheckCircle />, "Installed"],
     installing: [<FaSpinner />, "Installing..."],
     initial: [<FaDownload />, "Install"],
@@ -87,54 +95,83 @@ const KeypassInstallSteps = () => {
   return (
     <div>
       <h4>
-        <strong>
-          1. Install KeePassXC: {isDoneText(!!setupState?.areDependenciesSetup)}
-        </strong>
+        <strong>1. Install Bitwarden CLI: {isDoneText(!!setupState?.bwInstalled)}</strong>
       </h4>
-      <strong>Click</strong> the button below to install the{" "}
-      <strong>KeePassXC Flatpak</strong>
+      <strong>Click</strong> the button below to download the official{" "}
+      <strong>Bitwarden CLI</strong> (about 45 MB download)
       <ButtonItem
         layout="below"
         disabled={isInstallDisabled}
         onClick={() => {
-          installKeepassFlatpak();
+          installBw();
         }}
       >
         <ButtonItemIconContent icon={buttonIcon}>{buttonText}</ButtonItemIconContent>
       </ButtonItem>
       {installState === "error" && (
         <>
-          <strong>Installation failed.</strong> Please try to install the{" "}
-          <strong>KeypassXC Flatpak</strong> in <strong>Desktop Mode</strong>.
+          <strong>Installation failed.</strong> Check your internet connection and try
+          again.
         </>
       )}
     </div>
   );
 };
 
-const DatabaseCreateSteps = () => {
-  const { setupState } = usePasswordManagerContext();
+const ServerSteps = () => {
+  const { setupState, configureServer } = usePasswordManagerContext();
 
-  const listStyle = { paddingInlineStart: "25px" };
+  const isDone =
+    !!setupState?.serverUrl && setupState.serverUrl !== "https://vault.bitwarden.com";
 
   return (
-    <Focusable onActivate={() => {}}>
+    <div>
       <h4>
-        <strong>2. Select a Database: {isDoneText(!!setupState?.databasePath)}</strong>
+        <strong>2. Set Vaultwarden server: {isDoneText(isDone)}</strong>
       </h4>
-      <ol style={listStyle}>
-        <li>
-          You can either <strong>create a new database</strong> or select an{" "}
-          <strong>existing KDBX database file</strong>
-        </li>
-        <li>
-          You can create a new database by clicking on <strong>"Create Database"</strong>
-        </li>
-        <li>
-          Or you can also create a new Database using the{" "}
-          <strong>KeePassXC Desktop application</strong>
-        </li>
-      </ol>
-    </Focusable>
+      {setupState?.serverUrl && (
+        <div style={{ wordBreak: "break-word" }}>
+          Current: <strong>{setupState.serverUrl}</strong>
+        </div>
+      )}
+      <ButtonItem
+        layout="below"
+        disabled={!setupState?.bwInstalled}
+        onClick={() =>
+          showModal(
+            <ServerModal
+              initialUrl={setupState?.serverUrl ?? null}
+              onConfigure={configureServer}
+            />,
+            findSP()
+          )
+        }
+      >
+        <ButtonItemIconContent icon={<FaServer />}>Set Server URL</ButtonItemIconContent>
+      </ButtonItem>
+    </div>
+  );
+};
+
+const LoginSteps = () => {
+  const { setupState, login } = usePasswordManagerContext();
+
+  const loggedIn = isLoggedIn(setupState);
+
+  return (
+    <div>
+      <h4>
+        <strong>3. Log in: {isDoneText(loggedIn)}</strong>
+      </h4>
+      Log in once with your <strong>personal API key</strong>. Afterwards you only need
+      your <strong>master password</strong> to unlock.
+      <ButtonItem
+        layout="below"
+        disabled={!setupState?.bwInstalled || loggedIn}
+        onClick={() => showModal(<LoginModal onLogin={login} />, findSP())}
+      >
+        <ButtonItemIconContent icon={<FaSignInAlt />}>Log in</ButtonItemIconContent>
+      </ButtonItem>
+    </div>
   );
 };
