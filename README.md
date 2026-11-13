@@ -2,7 +2,11 @@
 DeckWarden is a Decky Plugin to access your **self-hosted Vaultwarden** (or any Bitwarden-compatible) vault directly in SteamOS gaming mode.
 Internally it uses the official **Bitwarden CLI** (`bw`).
 
-DeckWarden is a fork of [DeckPass](https://github.com/Teppichseite/DeckPass) by Teppichseite, which does the same for KeePassXC databases.
+## Inspired by DeckPass
+DeckWarden would not exist without **[DeckPass](https://github.com/Teppichseite/DeckPass)** by **[Teppichseite](https://github.com/Teppichseite)**, a Decky plugin for KeePassXC databases.
+DeckWarden is a fork of it. The Quick Access Menu UI, the way credentials are pasted into games, the security-token design and the release setup all come from DeckPass; only the KeePassXC backend was swapped for the Bitwarden CLI.
+
+If you use KeePassXC rather than Vaultwarden/Bitwarden, use DeckPass. Please consider giving it a ⭐.
 
 ## Features
 - Connects to any **Vaultwarden** / Bitwarden server URL
