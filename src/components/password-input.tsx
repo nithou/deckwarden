@@ -2,7 +2,11 @@ import { Button, TextField, TextFieldProps } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 
-export const PasswordInput = (props: TextFieldProps) => {
+export interface PasswordInputProps extends TextFieldProps {
+  extraControls?: React.ReactNode;
+}
+
+export const PasswordInput = ({ extraControls, ...props }: PasswordInputProps) => {
   const [showPassword, setShowPassword] = useState(false);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -59,7 +63,15 @@ export const PasswordInput = (props: TextFieldProps) => {
 
   return (
     <div ref={wrapperRef}>
-      <TextField {...props} inlineControls={showButton}></TextField>
+      <TextField
+        {...props}
+        inlineControls={
+          <>
+            {showButton}
+            {extraControls}
+          </>
+        }
+      ></TextField>
     </div>
   );
 };

@@ -8,11 +8,12 @@ import {
   FaFolder,
   FaEyeSlash,
   FaInfoCircle,
+  FaClock,
 } from "react-icons/fa";
 import { usePasswordManagerContext } from "../context";
-import { Entry } from "../interfaces";
+import { Entry, TotpCode } from "../interfaces";
 import { ButtonContentOverflow, ButtonItemIconContent } from "./shared";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface DetailDescriptionProps {
   children?: React.ReactNode;
@@ -59,6 +60,64 @@ export const PastingInstructions = () => {
           paste button.
         </div>
       </div>
+    </DetailDescription>
+  );
+};
+
+const formatTotpCode = (code: string) =>
+  code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
+
+// Fetches the current code and refreshes it when the period rolls over.
+// The secret never leaves the backend; only the short-lived code does.
+const TotpDisplay = ({ entryId }: { entryId: string }) => {
+  const { getEntryTotp } = usePasswordManagerContext();
+  const [totp, setTotp] = useState<(TotpCode & { fetchedAt: number }) | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const refresh = async () => {
+      try {
+        const result = await getEntryTotp(entryId);
+        if (cancelled) return;
+        setFailed(false);
+        setTotp({ ...result, fetchedAt: Date.now() });
+        timer = setTimeout(refresh, result.remainingSeconds * 1000 + 250);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setFailed(true);
+      }
+    };
+
+    refresh();
+    const ticker = setInterval(() => setNow(Date.now()), 1000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      clearInterval(ticker);
+    };
+  }, [entryId]);
+
+  if (failed) {
+    return <DetailDescription>Invalid TOTP secret</DetailDescription>;
+  }
+
+  if (!totp) {
+    return <DetailDescription>…</DetailDescription>;
+  }
+
+  const remaining = Math.max(
+    0,
+    totp.remainingSeconds - Math.floor((now - totp.fetchedAt) / 1000)
+  );
+
+  return (
+    <DetailDescription>
+      <strong>{formatTotpCode(totp.code)}</strong> · {remaining}s
     </DetailDescription>
   );
 };
@@ -156,6 +215,22 @@ export const EntryContent = () => {
           >
             Paste
           </ButtonItem>
+
+          {currentEntry.hasTotp && (
+            <ButtonItem
+              layout="below"
+              label="TOTP"
+              icon={<FaClock></FaClock>}
+              onClick={() => pasteEntryDetail("totp")}
+              description={
+                currentEntry.displayMode === "full" ? (
+                  <TotpDisplay entryId={currentEntry.id} />
+                ) : undefined
+              }
+            >
+              Paste
+            </ButtonItem>
+          )}
 
           <Field childrenLayout="below" childrenContainerWidth="max">
             <Focusable style={{ display: "flex", gap: "10px" }}>

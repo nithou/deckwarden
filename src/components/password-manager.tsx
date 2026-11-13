@@ -1,4 +1,11 @@
-import { PanelSection, PanelSectionRow, ButtonItem, showModal, findSP } from "@decky/ui";
+import {
+  PanelSection,
+  PanelSectionRow,
+  ButtonItem,
+  showModal,
+  findSP,
+  TextField,
+} from "@decky/ui";
 import { FaKey, FaLock, FaLockOpen, FaSignOutAlt, FaSync } from "react-icons/fa";
 import { useState } from "react";
 import { usePasswordManagerContext } from "../context";
@@ -6,6 +13,8 @@ import { EntryComponent } from "./entry";
 import { ButtonItemIconContent } from "./shared";
 import { isLoggedIn, SetupGuide } from "./setup-guide";
 import { OpenDatabaseModal } from "./modals/open-database-modal";
+import { useJsContextState } from "../hooks";
+import { Entry } from "../interfaces";
 
 const centeredTextStyle: React.CSSProperties = {
   textAlign: "center",
@@ -76,13 +85,29 @@ export const PasswordManagerClosed = () => {
   );
 };
 
+// Every whitespace-separated term must appear in "Folder/Name" (case-insensitive).
+const matchesSearch = (entry: Entry, query: string) => {
+  const haystack = entry.path.toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => haystack.includes(term));
+};
+
 export const PasswordManagerOpened = () => {
   const { currentEntries, closePasswordManager, syncVault } = usePasswordManagerContext();
   const [isSyncing, setIsSyncing] = useState(false);
+  // Kept across Quick Access Menu re-mounts (e.g. after pasting closes the menu)
+  const [searchQuery, setSearchQuery] = useJsContextState<string>("searchQuery", "");
 
   if (!currentEntries) {
     return <div />;
   }
+
+  const filteredEntries = currentEntries.filter((entry) =>
+    matchesSearch(entry, searchQuery)
+  );
 
   const onSync = async () => {
     setIsSyncing(true);
@@ -96,7 +121,13 @@ export const PasswordManagerOpened = () => {
   return (
     <PanelSection>
       <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => closePasswordManager()}>
+        <ButtonItem
+          layout="below"
+          onClick={async () => {
+            await setSearchQuery("");
+            await closePasswordManager();
+          }}
+        >
           <ButtonItemIconContent icon={<FaLock />}>Lock Vault</ButtonItemIconContent>
         </ButtonItem>
         <ButtonItem layout="below" disabled={isSyncing} onClick={onSync}>
@@ -105,11 +136,21 @@ export const PasswordManagerOpened = () => {
           </ButtonItemIconContent>
         </ButtonItem>
         <div style={{ marginTop: "20px" }}></div>
+        {currentEntries.length > 0 && (
+          <TextField
+            label="Search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        )}
         {currentEntries.length === 0 && (
           <div style={centeredTextStyle}>No login items in this vault.</div>
         )}
+        {currentEntries.length > 0 && filteredEntries.length === 0 && (
+          <div style={centeredTextStyle}>No items match "{searchQuery}".</div>
+        )}
       </PanelSectionRow>
-      {currentEntries.map((entry) => (
+      {filteredEntries.map((entry) => (
         <EntryComponent key={entry.id} entry={entry} />
       ))}
     </PanelSection>

@@ -14,6 +14,7 @@ import {
   loginApiKeyBe,
   logoutBe,
   syncBe,
+  getEntryTotpBe,
 } from "./backend";
 import React from "react";
 import {
@@ -22,7 +23,9 @@ import {
   CurrentEntryDetails,
   CurrentEntryDisplayMode,
   Entry,
+  PasteableDetail,
   SetupState,
+  TotpCode,
 } from "./interfaces";
 
 import { useJsContextState } from "./hooks";
@@ -49,7 +52,8 @@ interface PasswordManagerContextValue {
   openPasswordManager: (password: string) => Promise<void>;
   closePasswordManager: () => Promise<void>;
   syncVault: () => Promise<void>;
-  pasteEntryDetail: (detail: keyof CurrentEntryDetails) => Promise<void>;
+  pasteEntryDetail: (detail: PasteableDetail) => Promise<void>;
+  getEntryTotp: (entryId: string) => Promise<TotpCode>;
   toggleCurrentEntry: (
     newCurrentEntry: Entry | null,
     displayMode: CurrentEntryDisplayMode
@@ -70,6 +74,7 @@ const PasswordManagerContext = createContext<PasswordManagerContextValue>({
   closePasswordManager: async () => {},
   syncVault: async () => {},
   pasteEntryDetail: async () => {},
+  getEntryTotp: async () => ({ code: "", remainingSeconds: 0 }),
   toggleCurrentEntry: async () => {},
   installBw: async () => {},
   configureServer: async () => {},
@@ -167,14 +172,28 @@ export const PasswordMangerContextProvider = (
     return mapBeEntryDetailsToCurrentEntryDetails(detailsBe);
   };
 
-  const pasteEntryDetail = async (detail: keyof CurrentEntryDetails) => {
+  const getEntryTotp = async (entryId: string): Promise<TotpCode> => {
+    const [code, remainingSeconds] = await getEntryTotpBe(securityToken, entryId);
+    return { code, remainingSeconds };
+  };
+
+  const pasteEntryDetail = async (detail: PasteableDetail) => {
     if (!currentEntry) {
       return;
     }
 
-    const details = await getEntryDetails(currentEntry.id);
+    await handleErrors(
+      "Failed to paste",
+      async () => {
+        const text =
+          detail === "totp"
+            ? (await getEntryTotp(currentEntry.id)).code
+            : (await getEntryDetails(currentEntry.id))[detail];
 
-    pasteViaKeyboardInput(details[detail]);
+        pasteViaKeyboardInput(text);
+      },
+      false
+    );
   };
 
   const toggleCurrentEntry = async (
@@ -274,6 +293,7 @@ export const PasswordMangerContextProvider = (
     closePasswordManager,
     syncVault,
     pasteEntryDetail,
+    getEntryTotp,
     toggleCurrentEntry,
     installBw,
     configureServer,

@@ -107,6 +107,14 @@ class Plugin:
         except Exception:
             await self._handle_error("Failed to get entry details!", False, True)
 
+    async def get_entry_totp(self, security_token: str, entry_id: str):
+        try:
+            return await self.pm.get_entry_totp(security_token, entry_id)
+        except Exception:
+            # Keep the vault open: a malformed TOTP secret on one entry
+            # should not lock everything.
+            await self._handle_error("Failed to generate TOTP code!", False, False)
+
     async def close_password_manager(self):
         decky.logger.info("Locking vault")
         try:

@@ -3,6 +3,7 @@ import secrets
 from logging import Logger
 
 from bw_cli import BwCli
+from totp import generate_totp, parse_totp
 
 # Bitwarden cipher type for login items
 LOGIN_ITEM_TYPE = 1
@@ -63,11 +64,15 @@ class PasswordManager:
                 "path": f"{folder}/{name}" if folder else name,
                 "username": login.get("username") or "",
                 "password": login.get("password") or "",
+                "totp": login.get("totp") or "",
             }
 
     async def get_entries(self, security_token: str):
         self._validate_security_token(security_token)
-        entries = [[item_id, item["path"]] for item_id, item in self._items.items()]
+        entries = [
+            [item_id, item["path"], item["totp"] != ""]
+            for item_id, item in self._items.items()
+        ]
         entries.sort(key=lambda e: e[1].lower())
         return entries
 
@@ -77,6 +82,14 @@ class PasswordManager:
         if item is None:
             raise ValueError("Unknown entry!")
         return [item["username"], item["password"]]
+
+    async def get_entry_totp(self, security_token: str, entry_id: str):
+        self._validate_security_token(security_token)
+        item = self._items.get(entry_id)
+        if item is None or not item["totp"]:
+            raise ValueError("Entry has no TOTP!")
+        code, remaining = generate_totp(parse_totp(item["totp"]))
+        return [code, remaining]
 
     async def close(self):
         was_open = self.is_open()

@@ -7,7 +7,7 @@ import {
   VaultStatus,
 } from "./interfaces";
 
-type BeEntry = [string, string];
+type BeEntry = [string, string, boolean];
 type BeSetupState = [boolean, VaultStatus, string | null, string | null];
 
 export const openPasswordManagerBe = callable<[string], string>("open_password_manager");
@@ -17,6 +17,10 @@ export const syncBe = callable<[string], void>("sync");
 export const getEntriesBe = callable<[string], BeEntry[]>("get_entries");
 export const getEntryDetailsBe = callable<[string, string], [string, string]>(
   "get_entry_details"
+);
+
+export const getEntryTotpBe = callable<[string, string], [string, number]>(
+  "get_entry_totp"
 );
 
 export const checkSetupStateBe = callable<[], BeSetupState>("check_setup_state");
@@ -32,7 +36,7 @@ export const logoutBe = callable<[], void>("logout");
 
 export const mapBeEntriesToEntries = (beEntries: BeEntry[]): Entry[] => {
   return beEntries
-    .map(([id, path]) => {
+    .map(([id, path, hasTotp]) => {
       const entryParts = path.split("/");
 
       const title = entryParts.slice(-1)[0];
@@ -45,6 +49,7 @@ export const mapBeEntriesToEntries = (beEntries: BeEntry[]): Entry[] => {
         path,
         title,
         folderPath,
+        hasTotp,
       };
     })
     .sort((a, b) => a.path.localeCompare(b.path))

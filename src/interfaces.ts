@@ -12,6 +12,7 @@ export type Entry = {
   path: string;
   title: string;
   folderPath?: string;
+  hasTotp: boolean;
 };
 
 export type CurrentEntryDisplayMode = "copy" | "full";
@@ -19,6 +20,13 @@ export type CurrentEntryDisplayMode = "copy" | "full";
 export type CurrentEntryDetails = {
   username: string;
   password: string;
+};
+
+export type PasteableDetail = keyof CurrentEntryDetails | "totp";
+
+export type TotpCode = {
+  code: string;
+  remainingSeconds: number;
 };
 
 export type CurrentEntry = Entry & {
