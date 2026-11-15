@@ -42,7 +42,7 @@ Optional, off by default (**Settings → Unlock with PIN**). After you unlock wi
 The Bitwarden CLI has no PIN support, so DeckWarden implements it the way the Bitwarden apps do; see the security notes below.
 
 ### Updates
-Decky only checks for updates of plugins from its own store, so DeckWarden checks this repository's **latest GitHub release** itself (at most every 6 hours, or with **Check for updates**). When a newer version is out, an **Update** button appears at the top of the plugin. It hands the release ZIP and its SHA-256 to **Decky's own installer**, which asks for confirmation, verifies the hash and replaces the installed version. Your login and settings are kept.
+Decky only checks for updates of plugins from its own store, so DeckWarden checks this repository's **latest GitHub release** itself (at most every hour, or with **Check for updates**). When a newer version is out, an **Update** button appears at the top of the plugin. It hands the release ZIP and its SHA-256 to **Decky's own installer**, which asks for confirmation, verifies the hash and replaces the installed version. Your login and settings are kept.
 
 ### Self-signed certificates
 If your Vaultwarden server uses a certificate from a private CA, copy the CA certificate in PEM format to
