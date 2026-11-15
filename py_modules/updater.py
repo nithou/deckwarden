@@ -9,7 +9,7 @@ REPO = "nithou/deckwarden"
 ASSET_NAME = "DeckWarden.zip"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
-CACHE_SECONDS = 6 * 60 * 60
+CACHE_SECONDS = 60 * 60
 
 _VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")

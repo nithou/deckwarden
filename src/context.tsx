@@ -527,8 +527,13 @@ export const PasswordMangerContextProvider = (
     try {
       const [currentVersion, update] = await checkForUpdateBe(force);
       setUpdateState({ currentVersion, update });
-      if (force && !update) {
-        toaster.toast({ title: "DeckWarden", body: `Up to date (v${currentVersion})` });
+      if (force) {
+        toaster.toast({
+          title: "DeckWarden",
+          body: update
+            ? `Update available: v${update.version}`
+            : `Up to date (v${currentVersion})`,
+        });
       }
     } catch (e) {
       // Offline or GitHub unreachable: stay silent unless asked explicitly

@@ -28,8 +28,24 @@ export const UpdateBanner = () => {
 };
 
 export const VersionInfo = () => {
-  const { updateState, checkForUpdates } = usePasswordManagerContext();
+  const { updateState, checkForUpdates, installUpdate } = usePasswordManagerContext();
   const [isChecking, setIsChecking] = useState(false);
+
+  // Offer the update right here too: the banner is at the top of the panel
+  const update = updateState?.update;
+  if (update) {
+    return (
+      <ButtonItem
+        layout="below"
+        onClick={() => installUpdate()}
+        description={`DeckWarden v${updateState?.currentVersion}`}
+      >
+        <ButtonItemIconContent icon={<FaArrowCircleUp />}>
+          Update to v{update.version}
+        </ButtonItemIconContent>
+      </ButtonItem>
+    );
+  }
 
   const onCheck = async () => {
     setIsChecking(true);
