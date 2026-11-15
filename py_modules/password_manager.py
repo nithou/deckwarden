@@ -1,5 +1,6 @@
 import hmac
 import secrets
+import time
 from logging import Logger
 
 from bw_cli import BwCli
@@ -21,6 +22,7 @@ class PasswordManager:
         self.security_token = ""
         self._session = ""
         self._items: dict[str, dict] = {}
+        self.last_activity = time.monotonic()
 
     def is_open(self):
         return self._session != ""
@@ -46,6 +48,7 @@ class PasswordManager:
             raise
 
         self._generate_security_token()
+        self.touch()
         return self.security_token
 
     async def sync(self, security_token: str):
@@ -66,7 +69,9 @@ class PasswordManager:
             folder = folder_names.get(item.get("folderId"))
             name = item.get("name") or "(unnamed)"
             login = item.get("login") or {}
+            uris = [u.get("uri") for u in (login.get("uris") or []) if u.get("uri")]
             self._items[item["id"]] = {
+                "uris": uris,
                 "path": f"{folder}/{name}" if folder else name,
                 "username": login.get("username") or "",
                 "password": login.get("password") or "",
@@ -76,7 +81,7 @@ class PasswordManager:
     async def get_entries(self, security_token: str):
         self._validate_security_token(security_token)
         entries = [
-            [item_id, item["path"], item["totp"] != ""]
+            [item_id, item["path"], item["totp"] != "", item["uris"]]
             for item_id, item in self._items.items()
         ]
         entries.sort(key=lambda e: e[1].lower())
@@ -89,8 +94,10 @@ class PasswordManager:
             raise ValueError("Unknown entry!")
         return [item["username"], item["password"]]
 
-    async def get_entry_totp(self, security_token: str, entry_id: str):
-        self._validate_security_token(security_token)
+    async def get_entry_totp(self, security_token: str, entry_id: str, user_action: bool = True):
+        # The on-screen code refreshes itself every period; that must not
+        # count as activity or a displayed code would prevent auto-lock.
+        self._validate_security_token(security_token, record_activity=user_action)
         item = self._items.get(entry_id)
         if item is None or not item["totp"]:
             raise ValueError("Entry has no TOTP!")
@@ -105,9 +112,17 @@ class PasswordManager:
         if was_open:
             await self.bw.lock()
 
+    def touch(self):
+        self.last_activity = time.monotonic()
+
+    def idle_seconds(self) -> float:
+        return time.monotonic() - self.last_activity
+
     def _generate_security_token(self):
         self.security_token = secrets.token_urlsafe(32)
 
-    def _validate_security_token(self, security_token: str):
+    def _validate_security_token(self, security_token: str, record_activity: bool = True):
         if not self.security_token or not hmac.compare_digest(self.security_token, security_token):
             raise ValueError("Invalid security token!")
+        if record_activity:
+            self.touch()

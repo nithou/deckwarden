@@ -8,7 +8,7 @@ import {
   VaultStatus,
 } from "./interfaces";
 
-type BeEntry = [string, string, boolean];
+type BeEntry = [string, string, boolean, string[]];
 type BeSetupState = [boolean, VaultStatus, string | null, string | null];
 
 export const openPasswordManagerBe = callable<[string], string>("open_password_manager");
@@ -20,9 +20,14 @@ export const getEntryDetailsBe = callable<[string, string], [string, string]>(
   "get_entry_details"
 );
 
-export const getEntryTotpBe = callable<[string, string], [string, number]>(
+// Last argument: whether this is a user action (counts against auto-lock)
+export const getEntryTotpBe = callable<[string, string, boolean], [string, number]>(
   "get_entry_totp"
 );
+
+export const touchBe = callable<[string], void>("touch");
+export const getAutoLockMinutesBe = callable<[], number>("get_auto_lock_minutes");
+export const setAutoLockMinutesBe = callable<[number], void>("set_auto_lock_minutes");
 
 export const checkSetupStateBe = callable<[], BeSetupState>("check_setup_state");
 
@@ -59,7 +64,7 @@ export const installUpdate = (update: UpdateInfo): Promise<void> =>
 
 export const mapBeEntriesToEntries = (beEntries: BeEntry[]): Entry[] => {
   return beEntries
-    .map(([id, path, hasTotp]) => {
+    .map(([id, path, hasTotp, uris]) => {
       const entryParts = path.split("/");
 
       const title = entryParts.slice(-1)[0];
@@ -73,6 +78,7 @@ export const mapBeEntriesToEntries = (beEntries: BeEntry[]): Entry[] => {
         title,
         folderPath,
         hasTotp,
+        uris,
       };
     })
     .sort((a, b) => a.path.localeCompare(b.path))

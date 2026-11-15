@@ -8,6 +8,11 @@ from password_manager import PasswordManager
 from updater import Updater
 
 import decky
+from settings import SettingsManager
+
+AUTO_LOCK_CHOICES = (0, 5, 10, 15, 30, 60)  # minutes; 0 = never
+DEFAULT_AUTO_LOCK_MINUTES = 15
+AUTO_LOCK_CHECK_SECONDS = 20
 
 
 class Plugin:
@@ -15,6 +20,8 @@ class Plugin:
     bw: BwCli
     bw_installer: BwInstaller
     pm: PasswordManager
+    settings: SettingsManager
+    _auto_lock_task: asyncio.Task | None = None
 
     def _init_components(self):
         bin_dir = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "bin")
@@ -142,9 +149,9 @@ class Plugin:
         except Exception:
             await self._handle_error("Failed to get entry details!", False, True)
 
-    async def get_entry_totp(self, security_token: str, entry_id: str):
+    async def get_entry_totp(self, security_token: str, entry_id: str, user_action: bool = True):
         try:
-            return await self.pm.get_entry_totp(security_token, entry_id)
+            return await self.pm.get_entry_totp(security_token, entry_id, user_action)
         except Exception:
             # Keep the vault open: a malformed TOTP secret on one entry
             # should not lock everything.
@@ -157,6 +164,40 @@ class Plugin:
         except Exception:
             decky.logger.error("Failed to lock vault!")
 
+    async def touch(self, security_token: str):
+        """Called when the plugin panel is opened, so browsing counts as activity."""
+        try:
+            self.pm._validate_security_token(security_token)
+        except Exception:
+            await self._handle_error("Invalid session!", False, False)
+
+    def _auto_lock_minutes(self) -> int:
+        value = self.settings.getSetting("autoLockMinutes", DEFAULT_AUTO_LOCK_MINUTES)
+        return value if value in AUTO_LOCK_CHOICES else DEFAULT_AUTO_LOCK_MINUTES
+
+    async def get_auto_lock_minutes(self):
+        return self._auto_lock_minutes()
+
+    async def set_auto_lock_minutes(self, minutes: int):
+        if minutes not in AUTO_LOCK_CHOICES:
+            raise ValueError("Unsupported auto-lock delay")
+        self.settings.setSetting("autoLockMinutes", minutes)
+        self.settings.commit()
+        # Restart the countdown so a shorter delay doesn't lock immediately
+        self.pm.touch()
+
+    async def _auto_lock_loop(self):
+        while True:
+            await asyncio.sleep(AUTO_LOCK_CHECK_SECONDS)
+            try:
+                minutes = self._auto_lock_minutes()
+                if minutes and self.pm.is_open() and self.pm.idle_seconds() >= minutes * 60:
+                    decky.logger.info(f"Auto-locking vault after {minutes} min of inactivity")
+                    await self.close_password_manager()
+                    await decky.emit("vault_auto_locked")
+            except Exception:
+                decky.logger.error("Auto-lock check failed", exc_info=True)
+
     async def check_for_update(self, force: bool = False):
         """Returns [current_version, update or None]."""
         try:
@@ -168,10 +209,15 @@ class Plugin:
     async def _main(self):
         decky.logger.info("Loading DeckWarden...")
         self._init_components()
+        self.settings = SettingsManager(name="settings", settings_directory=decky.DECKY_PLUGIN_SETTINGS_DIR)
+        self.settings.read()
+        self._auto_lock_task = asyncio.get_event_loop().create_task(self._auto_lock_loop())
         decky.logger.info("Done loading DeckWarden")
 
     async def _unload(self):
         decky.logger.info("Unloaded DeckWarden")
+        if self._auto_lock_task:
+            self._auto_lock_task.cancel()
         await self.close_password_manager()
 
     async def _uninstall(self):

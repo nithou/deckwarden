@@ -19,3 +19,11 @@ export const useJsContextState = <T>(
 
   return [state ?? initialValue, setState];
 };
+
+// Reset values that survive panel re-mounts (e.g. when the vault is locked
+// while the Quick Access Menu is closed).
+export const clearJsContextState = (...keys: string[]) => {
+  for (const key of keys) {
+    delete jsContextState[key];
+  }
+};

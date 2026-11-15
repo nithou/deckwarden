@@ -11,10 +11,12 @@ If you use KeePassXC rather than Vaultwarden/Bitwarden, use DeckPass. Please con
 ## Features
 - Connects to any **Vaultwarden** / Bitwarden server URL
 - Logs in once with your **email and master password** (with optional two-step code) or your **personal API key**; after that you only unlock with your **master password**
-- Lists all **login items**, grouped by folder, with a **search field**
+- Lists all **login items**, grouped by folder, with a **search field** (matches names, folders and URLs)
 - Shows credentials and **pastes them into games**
 - Shows and pastes **TOTP codes** (standard `otpauth://`, raw base32 and Steam Guard `steam://` secrets)
 - **Syncs** the vault on demand
+- **Auto-locks** the vault after a configurable time without use (default 15 minutes)
+- Offers **updates** from this repository's GitHub releases
 
 DeckWarden is **read-only**: create and edit entries in the Vaultwarden web vault or the Bitwarden apps.
 
@@ -45,7 +47,7 @@ If your Vaultwarden server uses a certificate from a private CA, copy the CA cer
 1. DeckWarden **does not store the master password or the API key**
     1. The API key is only used for the one-time `bw login --apikey`. After that the CLI keeps its own refresh token in its data directory (`~/homebrew/settings/DeckWarden/bw-data`), together with the **encrypted** vault cache, as with any Bitwarden client
 2. The master password and API key are passed to the CLI **through environment variables of the child process, never through command-line arguments**, so they do not show up in the process list. The CLI has no such option for the email address and the one-time two-step code, so these two are passed as arguments, after validation
-3. After unlocking, the **session key** and the decrypted **login items** are kept **only in memory** of the Python backend. TOTP codes are computed in the backend; TOTP secrets are never sent to the frontend. Locking the vault, unloading the plugin or any backend error clears them and runs `bw lock`
+3. After unlocking, the **session key** and the decrypted **login items** are kept **only in memory** of the Python backend. **Auto-lock** (Never, 5, 10, 15, 30 or 60 minutes; default 15) is enforced by the backend, so it also works while the Quick Access Menu is closed. Unlocking, opening the plugin, showing or pasting credentials and syncing count as use; the on-screen TOTP refresh does not. TOTP codes are computed in the backend; TOTP secrets are never sent to the frontend. Locking the vault, unloading the plugin or any backend error clears them and runs `bw lock`
 4. DeckWarden deliberately does **not** use `bw serve`, because it exposes an unauthenticated REST API on localhost
 5. After unlocking, the frontend receives a **security token** (`secrets.token_urlsafe(32)`) that every backend call needs, checked with `hmac.compare_digest`. The token is stored in a scoped variable of the plugin's JavaScript module
 6. A malicious program or Decky plugin running as the same user can still read process memory or the CLI data directory under **certain conditions**

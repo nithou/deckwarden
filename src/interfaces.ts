@@ -13,6 +13,7 @@ export type Entry = {
   title: string;
   folderPath?: string;
   hasTotp: boolean;
+  uris: string[];
 };
 
 export type CurrentEntryDisplayMode = "copy" | "full";

@@ -81,7 +81,8 @@ const TotpDisplay = ({ entryId }: { entryId: string }) => {
 
     const refresh = async () => {
       try {
-        const result = await getEntryTotp(entryId);
+        // Automatic refresh: not a user action, must not delay auto-lock
+        const result = await getEntryTotp(entryId, false);
         if (cancelled) return;
         setFailed(false);
         setTotp({ ...result, fetchedAt: Date.now() });

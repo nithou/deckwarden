@@ -15,6 +15,9 @@ import {
   logoutBe,
   syncBe,
   getEntryTotpBe,
+  touchBe,
+  getAutoLockMinutesBe,
+  setAutoLockMinutesBe,
   loginPasswordBe,
   checkForUpdateBe,
   installUpdate as installUpdateBe,
@@ -34,11 +37,21 @@ import {
   UpdateState,
 } from "./interfaces";
 
-import { useJsContextState } from "./hooks";
-import { toaster } from "@decky/api";
+import { clearJsContextState, useJsContextState } from "./hooks";
+import { addEventListener, removeEventListener, toaster } from "@decky/api";
 import { pasteViaKeyboardInput } from "./copy-utils";
 
 let securityToken = "";
+
+const AUTO_LOCK_EVENT = "vault_auto_locked";
+
+// Module-level: runs even while the panel is closed (unmounted), so a later
+// re-mount doesn't show entries of a vault that is already locked.
+addEventListener(AUTO_LOCK_EVENT, () => {
+  securityToken = "";
+  clearJsContextState("currentEntries", "currentEntry", "searchQuery");
+  toaster.toast({ title: "DeckWarden", body: "Vault locked after inactivity" });
+});
 
 // Decky rejects backend calls with { pythonTraceback } whose last line is
 // "<ExceptionType>: <message>". Extract the bw detail the backend appended.
@@ -59,7 +72,10 @@ interface PasswordManagerContextValue {
   closePasswordManager: () => Promise<void>;
   syncVault: () => Promise<void>;
   pasteEntryDetail: (detail: PasteableDetail) => Promise<void>;
-  getEntryTotp: (entryId: string) => Promise<TotpCode>;
+  getEntryTotp: (entryId: string, userAction?: boolean) => Promise<TotpCode>;
+  touchVault: () => Promise<void>;
+  autoLockMinutes: number | null;
+  setAutoLockMinutes: (minutes: number) => Promise<void>;
   toggleCurrentEntry: (
     newCurrentEntry: Entry | null,
     displayMode: CurrentEntryDisplayMode
@@ -90,6 +106,9 @@ const PasswordManagerContext = createContext<PasswordManagerContextValue>({
   syncVault: async () => {},
   pasteEntryDetail: async () => {},
   getEntryTotp: async () => ({ code: "", remainingSeconds: 0 }),
+  touchVault: async () => {},
+  autoLockMinutes: null,
+  setAutoLockMinutes: async () => {},
   toggleCurrentEntry: async () => {},
   installBw: async () => {},
   configureServer: async () => {},
@@ -193,10 +212,61 @@ export const PasswordMangerContextProvider = (
     return mapBeEntryDetailsToCurrentEntryDetails(detailsBe);
   };
 
-  const getEntryTotp = async (entryId: string): Promise<TotpCode> => {
-    const [code, remainingSeconds] = await getEntryTotpBe(securityToken, entryId);
+  const getEntryTotp = async (entryId: string, userAction = true): Promise<TotpCode> => {
+    const [code, remainingSeconds] = await getEntryTotpBe(
+      securityToken,
+      entryId,
+      userAction
+    );
     return { code, remainingSeconds };
   };
+
+  // Opening the panel counts as activity for auto-lock
+  const touchVault = async () => {
+    if (!securityToken) {
+      return;
+    }
+    try {
+      await touchBe(securityToken);
+    } catch (e) {
+      // Session gone (e.g. backend restarted): fall back to the locked view
+      console.error(e);
+      securityToken = "";
+      await setCurrentEntries(null);
+      await setCurrentEntry(null);
+    }
+  };
+
+  const [autoLockMinutes, setAutoLockMinutesState] = useState<number | null>(null);
+
+  useEffect(() => {
+    getAutoLockMinutesBe()
+      .then(setAutoLockMinutesState)
+      .catch((e) => console.error(e));
+  }, []);
+
+  const setAutoLockMinutes = async (minutes: number) => {
+    await handleErrors(
+      "Failed to save auto-lock setting",
+      async () => {
+        await setAutoLockMinutesBe(minutes);
+        setAutoLockMinutesState(minutes);
+      },
+      false
+    );
+  };
+
+  // The backend locks the vault itself after inactivity and tells us
+  useEffect(() => {
+    // Module-level listener above clears the token and toasts; this one
+    // updates the mounted panel.
+    const listener = addEventListener(AUTO_LOCK_EVENT, async () => {
+      await setCurrentEntries(null);
+      await setCurrentEntry(null);
+      setCurrentEntryDetails(null);
+    });
+    return () => removeEventListener(AUTO_LOCK_EVENT, listener);
+  }, []);
 
   const pasteEntryDetail = async (detail: PasteableDetail) => {
     if (!currentEntry) {
@@ -381,6 +451,9 @@ export const PasswordMangerContextProvider = (
     syncVault,
     pasteEntryDetail,
     getEntryTotp,
+    touchVault,
+    autoLockMinutes,
+    setAutoLockMinutes,
     toggleCurrentEntry,
     installBw,
     configureServer,

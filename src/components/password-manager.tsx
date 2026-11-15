@@ -5,9 +5,10 @@ import {
   showModal,
   findSP,
   TextField,
+  DropdownItem,
 } from "@decky/ui";
 import { FaKey, FaLock, FaLockOpen, FaSignOutAlt, FaSync } from "react-icons/fa";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePasswordManagerContext } from "../context";
 import { EntryComponent } from "./entry";
 import { ButtonItemIconContent } from "./shared";
@@ -23,6 +24,33 @@ const centeredTextStyle: React.CSSProperties = {
   marginBottom: "20px",
   whiteSpace: "normal",
   wordBreak: "break-word",
+};
+
+const autoLockOptions = [
+  { data: 0, label: "Never" },
+  { data: 5, label: "5 minutes" },
+  { data: 10, label: "10 minutes" },
+  { data: 15, label: "15 minutes" },
+  { data: 30, label: "30 minutes" },
+  { data: 60, label: "1 hour" },
+];
+
+const AutoLockSetting = () => {
+  const { autoLockMinutes, setAutoLockMinutes } = usePasswordManagerContext();
+
+  if (autoLockMinutes === null) {
+    return null;
+  }
+
+  return (
+    <DropdownItem
+      label="Auto-lock"
+      description="Lock the vault after this long without using it"
+      rgOptions={autoLockOptions}
+      selectedOption={autoLockMinutes}
+      onChange={(option) => setAutoLockMinutes(option.data)}
+    />
+  );
 };
 
 export const PasswordManagerClosed = () => {
@@ -82,15 +110,17 @@ export const PasswordManagerClosed = () => {
         )}
 
         <SetupGuide initiallyOpen={setupState !== null && !loggedIn} />
+        <AutoLockSetting />
         <VersionInfo />
       </PanelSectionRow>
     </PanelSection>
   );
 };
 
-// Every whitespace-separated term must appear in "Folder/Name" (case-insensitive).
+// Every whitespace-separated term must appear in "Folder/Name" or one of the
+// entry's URIs (case-insensitive).
 const matchesSearch = (entry: Entry, query: string) => {
-  const haystack = entry.path.toLowerCase();
+  const haystack = [entry.path, ...entry.uris].join(" ").toLowerCase();
   return query
     .toLowerCase()
     .split(/\s+/)
@@ -99,10 +129,16 @@ const matchesSearch = (entry: Entry, query: string) => {
 };
 
 export const PasswordManagerOpened = () => {
-  const { currentEntries, closePasswordManager, syncVault } = usePasswordManagerContext();
+  const { currentEntries, closePasswordManager, syncVault, touchVault } =
+    usePasswordManagerContext();
   const [isSyncing, setIsSyncing] = useState(false);
   // Kept across Quick Access Menu re-mounts (e.g. after pasting closes the menu)
   const [searchQuery, setSearchQuery] = useJsContextState<string>("searchQuery", "");
+
+  // Opening the panel counts as activity and checks the session is alive
+  useEffect(() => {
+    touchVault();
+  }, []);
 
   if (!currentEntries) {
     return <div />;
