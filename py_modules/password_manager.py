@@ -5,6 +5,7 @@ import re
 import secrets
 import time
 from logging import Logger
+from typing import Callable
 
 from bw_cli import BwCli
 from totp import generate_totp, parse_totp
@@ -35,17 +36,22 @@ class PasswordManager:
     - PIN-locked: the bw session key is kept in memory (and nothing else),
       the token is revoked; the PIN gives a new token
     - locked: no session; the master password is needed
-    The PIN and its hash only ever live in memory, so a restart of Decky or
-    of the Deck always requires the master password.
+    The bw session only lives in memory, so a restart of Decky or of the
+    Deck always requires the master password. The PIN itself (salted scrypt
+    hash only) is persisted, as in the Bitwarden apps, so it keeps working
+    after the next master password unlock without being set again.
     """
 
     logger: Logger
 
     bw: BwCli
 
-    def __init__(self, logger: Logger, bw: BwCli):
+    def __init__(self, logger: Logger, bw: BwCli,
+                 load_pin: Callable[[], tuple[bytes, bytes] | None] = lambda: None,
+                 save_pin: Callable[[tuple[bytes, bytes] | None], None] = lambda _: None):
         self.logger = logger
         self.bw = bw
+        self._save_pin = save_pin
         self.security_token = ""
         self._session = ""
         # Explicit flag: during an unlock the session exists before the token
@@ -53,7 +59,10 @@ class PasswordManager:
         self._pin_locked = False
         self._items: dict[str, dict] = {}
         self.last_activity = time.monotonic()
-        self._clear_pin()
+        self._pin_failures = 0
+        self._password_unlocked_at = 0.0
+        stored = load_pin()
+        self._pin_salt, self._pin_hash = stored if stored else (b"", None)
 
     # ---- state -----------------------------------------------------------
 
@@ -95,6 +104,7 @@ class PasswordManager:
             raise
 
         self._password_unlocked_at = time.monotonic()
+        self._pin_failures = 0
         self._generate_security_token()
         self.touch()
         return self.security_token
@@ -133,18 +143,15 @@ class PasswordManager:
         self._pin_salt = os.urandom(16)
         self._pin_hash = _hash_pin(pin, self._pin_salt)
         self._pin_failures = 0
-
-    def _clear_pin(self):
-        self._pin_hash: bytes | None = None
-        self._pin_salt = b""
-        self._pin_failures = 0
-        self._password_unlocked_at = 0.0
+        self._save_pin((self._pin_salt, self._pin_hash))
 
     async def remove_pin(self):
         """Forget the PIN; if PIN-locked, that means locking completely."""
         if self.is_pin_locked():
             await self.close()
-        self._clear_pin()
+        self._pin_salt, self._pin_hash = b"", None
+        self._pin_failures = 0
+        self._save_pin(None)
 
     # ---- locking ---------------------------------------------------------
 
@@ -167,7 +174,8 @@ class PasswordManager:
         self.security_token = ""
         self._session = ""
         self._pin_locked = False
-        self._clear_pin()
+        # The PIN is kept (persisted); only the session-bound state resets
+        self._password_unlocked_at = 0.0
         if had_session:
             await self.bw.lock()
 

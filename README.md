@@ -33,11 +33,13 @@ DeckWarden is **read-only**: create and edit entries in the Vaultwarden web vaul
 4. Click **Unlock Vault** and enter your master password
 
 ### PIN unlock
-Optional, off by default (**Settings → Unlock with PIN**). After you unlock with your master password, DeckWarden asks for a 4 to 8 digit PIN. When the vault then locks (manually or by auto-lock), **Unlock with PIN** gets you back in. The master password is required again:
+Optional, off by default (**Settings → Unlock with PIN**). After you first unlock with your master password, DeckWarden asks for a 4 to 8 digit PIN; you can change it later with **Settings → Change PIN** while the vault is open. When the vault then locks (manually or by auto-lock), **Unlock with PIN** gets you back in. The PIN is remembered, so you never have to set it again; but the master password is required again first:
 - after **5 wrong PINs**,
 - after the chosen time since the last master password unlock (1, 4, 8 or 24 hours, or only on restart; default 8 hours),
-- after a **restart** of the Deck or Decky, since the PIN only lives in memory,
-- when you press **Lock completely** or turn the option off.
+- after a **restart** of the Deck or Decky, since the vault session only lives in memory,
+- when you press **Lock completely**.
+
+Turning the option off deletes the PIN.
 
 The Bitwarden CLI has no PIN support, so DeckWarden implements it the way the Bitwarden apps do; see the security notes below.
 
@@ -58,7 +60,7 @@ If your Vaultwarden server uses a certificate from a private CA, copy the CA cer
     1. The API key is only used for the one-time `bw login --apikey`. After that the CLI keeps its own refresh token in its data directory (`~/homebrew/settings/DeckWarden/bw-data`), together with the **encrypted** vault cache, as with any Bitwarden client
 2. The master password and API key are passed to the CLI **through environment variables of the child process, never through command-line arguments**, so they do not show up in the process list. The CLI has no such option for the email address and the one-time two-step code, so these two are passed as arguments, after validation
 3. After unlocking, the **session key** and the decrypted **login items** are kept **only in memory** of the Python backend. **Auto-lock** (Never, 5, 10, 15, 30 or 60 minutes; default 15) is enforced by the backend, so it also works while the Quick Access Menu is closed. Unlocking, opening the plugin, showing or pasting credentials and syncing count as use; the on-screen TOTP refresh does not. TOTP codes are computed in the backend; TOTP secrets are never sent to the frontend. Locking the vault, unloading the plugin or any backend error clears them and runs `bw lock`
-4. **PIN unlock** keeps the CLI **session key in memory** while PIN-locked (decrypted items and the security token are dropped). This is the same trade-off as PIN unlock in the Bitwarden apps: anyone able to read the plugin's memory while PIN-locked could decrypt the vault, just as while it is unlocked. The PIN is stored only as a salted `scrypt` hash in memory and never reaches the CLI. Its protection is the **5-attempt limit** enforced by the backend, not the hash itself: a short PIN is easy to brute-force by someone who can read memory. Leave the option off if that matters to you.
+4. **PIN unlock** keeps the CLI **session key in memory** while PIN-locked (decrypted items and the security token are dropped). This is the same trade-off as PIN unlock in the Bitwarden apps: anyone able to read the plugin's memory while PIN-locked could decrypt the vault, just as while it is unlocked. The PIN is stored only as a salted `scrypt` hash, in the plugin settings file, and never reaches the CLI. The PIN alone opens nothing: it only works while a session opened with the master password is held in memory. Its protection is the **5-attempt limit** enforced by the backend, not the hash: someone who can read the settings file could brute-force a short PIN offline, so **don't reuse a PIN you use elsewhere**. Leave the option off if that matters to you.
 5. DeckWarden deliberately does **not** use `bw serve`, because it exposes an unauthenticated REST API on localhost
 6. After unlocking, the frontend receives a **security token** (`secrets.token_urlsafe(32)`) that every backend call needs, checked with `hmac.compare_digest`. The token is stored in a scoped variable of the plugin's JavaScript module
 7. A malicious program or Decky plugin running as the same user can still read process memory or the CLI data directory under **certain conditions**

@@ -1,6 +1,15 @@
-import { Button, Spinner } from "@decky/ui";
+import { Button } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
-import { FaCheckCircle, FaBan } from "react-icons/fa";
+import { FaCheckCircle, FaBan, FaSpinner } from "react-icons/fa";
+
+// Own spinner: Decky's Spinner is looked up in Steam's internal icons and
+// doesn't render reliably across Steam builds.
+export const LoadingSpinner = () => (
+  <>
+    <style>{"@keyframes deckwarden-spin { to { transform: rotate(360deg); } }"}</style>
+    <FaSpinner style={{ animation: "deckwarden-spin 1s linear infinite" }} />
+  </>
+);
 
 export interface ButtonItemIconContentProps {
   children: React.ReactNode;
@@ -128,7 +137,7 @@ export const ModalContent = (props: ModalContentProps) => {
       >
         <ButtonItemIconContent
           justifyContent="center"
-          icon={isLoading ? <Spinner width={18} height={18} /> : <FaCheckCircle />}
+          icon={isLoading ? <LoadingSpinner /> : <FaCheckCircle />}
         >
           {isLoading ? "Please wait…" : "Confirm"}
         </ButtonItemIconContent>

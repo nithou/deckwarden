@@ -25,6 +25,21 @@ class Plugin:
     settings: SettingsManager
     _auto_lock_task: asyncio.Task | None = None
 
+    def _load_pin(self):
+        if getattr(self, "settings", None) is None:
+            return None
+        salt, digest = self.settings.getSetting("pinSalt"), self.settings.getSetting("pinHash")
+        try:
+            return (bytes.fromhex(salt), bytes.fromhex(digest)) if salt and digest else None
+        except (TypeError, ValueError):
+            return None
+
+    def _save_pin(self, pin: tuple[bytes, bytes] | None):
+        salt, digest = pin if pin else (None, None)
+        self.settings.setSetting("pinSalt", salt.hex() if salt else None)
+        self.settings.setSetting("pinHash", digest.hex() if digest else None)
+        self.settings.commit()
+
     def _init_components(self):
         bin_dir = os.path.join(decky.DECKY_PLUGIN_RUNTIME_DIR, "bin")
         self.bw_installer = BwInstaller(decky.logger, bin_dir)
@@ -35,7 +50,7 @@ class Plugin:
             # Optional custom CA for self-signed Vaultwarden certificates
             ca_cert_path=os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "ca.pem"),
         )
-        self.pm = PasswordManager(decky.logger, self.bw)
+        self.pm = PasswordManager(decky.logger, self.bw, self._load_pin, self._save_pin)
         self.updater = Updater(decky.logger, decky.DECKY_PLUGIN_VERSION)
 
     async def _handle_error(self, error_message: str, exec_info: bool, close_password_manager: bool):
@@ -275,9 +290,9 @@ class Plugin:
 
     async def _main(self):
         decky.logger.info("Loading DeckWarden...")
-        self._init_components()
         self.settings = SettingsManager(name="settings", settings_directory=decky.DECKY_PLUGIN_SETTINGS_DIR)
         self.settings.read()
+        self._init_components()
         self._auto_lock_task = asyncio.get_event_loop().create_task(self._auto_lock_loop())
         decky.logger.info("Done loading DeckWarden")
 

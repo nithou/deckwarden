@@ -36,8 +36,9 @@ export const SetPinModal = (props: SetPinModalProps) => {
           <>
             <Hint>
               Use a <strong>4 to 8 digit PIN</strong> to unlock DeckWarden after it locks.
-              It is kept in memory only: after 5 wrong attempts, a restart, or the time
-              limit, your master password is needed again.
+              Your master password is still needed after 5 wrong attempts, a restart or
+              the time limit; the PIN then works again. Don't reuse your phone or bank
+              PIN.
             </Hint>
             <PasswordInput
               label="PIN"
