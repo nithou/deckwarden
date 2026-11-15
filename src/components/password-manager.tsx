@@ -198,6 +198,7 @@ export const PasswordManagerOpened = () => {
           </ButtonItemIconContent>
         </ButtonItem>
         <SettingsSection vaultOpen={true} />
+        <VersionInfo />
         <div style={{ marginTop: "20px" }}></div>
         {currentEntries.length > 0 && (
           <TextField

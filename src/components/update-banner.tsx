@@ -4,6 +4,11 @@ import { FaArrowCircleUp, FaSync } from "react-icons/fa";
 import { usePasswordManagerContext } from "../context";
 import { ButtonItemIconContent } from "./shared";
 
+// Descriptions sit flush with the box edge by default; indent them slightly
+const VersionText = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ paddingLeft: "10px" }}>{children}</div>
+);
+
 export const UpdateBanner = () => {
   const { updateState, installUpdate } = usePasswordManagerContext();
 
@@ -17,7 +22,7 @@ export const UpdateBanner = () => {
       <ButtonItem
         layout="below"
         onClick={() => installUpdate()}
-        description={`Installed: v${updateState?.currentVersion}`}
+        description={<VersionText>Installed: v{updateState?.currentVersion}</VersionText>}
       >
         <ButtonItemIconContent icon={<FaArrowCircleUp />}>
           Update to v{update.version}
@@ -38,7 +43,7 @@ export const VersionInfo = () => {
       <ButtonItem
         layout="below"
         onClick={() => installUpdate()}
-        description={`DeckWarden v${updateState?.currentVersion}`}
+        description={<VersionText>DeckWarden v{updateState?.currentVersion}</VersionText>}
       >
         <ButtonItemIconContent icon={<FaArrowCircleUp />}>
           Update to v{update.version}
@@ -61,7 +66,11 @@ export const VersionInfo = () => {
       layout="below"
       disabled={isChecking}
       onClick={onCheck}
-      description={updateState ? `DeckWarden v${updateState.currentVersion}` : undefined}
+      description={
+        updateState ? (
+          <VersionText>DeckWarden v{updateState.currentVersion}</VersionText>
+        ) : undefined
+      }
     >
       <ButtonItemIconContent icon={<FaSync />}>
         {isChecking ? "Checking..." : "Check for updates"}

@@ -1,6 +1,6 @@
 {
   "name": "DeckWarden",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "DeckWarden is a Decky Plugin to access your self-hosted Vaultwarden (Bitwarden) vault directly in SteamOS gaming mode. Based on DeckPass.",
   "type": "module",
   "scripts": {
