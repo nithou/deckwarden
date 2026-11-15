@@ -1,4 +1,4 @@
-import { Button } from "@decky/ui";
+import { Button, Spinner } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import { FaCheckCircle, FaBan } from "react-icons/fa";
 
@@ -78,7 +78,15 @@ export const ModalContent = (props: ModalContentProps) => {
 
   const onConfirm = async () => {
     setIsLoading(true);
-    const result = await props.onConfirm();
+    let result: void | boolean;
+    try {
+      result = await props.onConfirm();
+    } catch (e) {
+      // Never leave the modal stuck on "Please wait"
+      console.error(e);
+      setIsLoading(false);
+      return;
+    }
     if (result === false) {
       setIsLoading(false);
       return;
@@ -118,8 +126,11 @@ export const ModalContent = (props: ModalContentProps) => {
         disabled={!props.canConfirm || isLoading}
         onClick={onConfirm}
       >
-        <ButtonItemIconContent justifyContent="center" icon={<FaCheckCircle />}>
-          Confirm
+        <ButtonItemIconContent
+          justifyContent="center"
+          icon={isLoading ? <Spinner width={18} height={18} /> : <FaCheckCircle />}
+        >
+          {isLoading ? "Please wait…" : "Confirm"}
         </ButtonItemIconContent>
       </Button>
       <Button
