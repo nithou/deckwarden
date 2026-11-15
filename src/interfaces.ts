@@ -43,3 +43,15 @@ export type PasswordLoginResult =
   | "code_required"
   | "method_required"
   | "error";
+
+export type UpdateInfo = {
+  version: string;
+  url: string;
+  sha256: string;
+  release_url: string;
+};
+
+export type UpdateState = {
+  currentVersion: string;
+  update: UpdateInfo | null;
+};

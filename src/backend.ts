@@ -4,6 +4,7 @@ import {
   CurrentEntryDetails,
   Entry,
   SetupState,
+  UpdateInfo,
   VaultStatus,
 } from "./interfaces";
 
@@ -37,6 +38,24 @@ export const loginPasswordBe = callable<
   [string, string]
 >("login_password");
 export const logoutBe = callable<[], void>("logout");
+
+export const checkForUpdateBe = callable<[boolean], [string, UpdateInfo | null]>(
+  "check_for_update"
+);
+
+// Decky's own installer: shows its confirmation prompt, downloads the zip,
+// verifies the SHA-256 and replaces the installed plugin folder.
+const PLUGIN_INSTALL_TYPE_UPDATE = 2;
+
+export const installUpdate = (update: UpdateInfo): Promise<void> =>
+  window.DeckyBackend.call(
+    "utilities/install_plugin",
+    update.url,
+    "DeckWarden",
+    update.version,
+    update.sha256,
+    PLUGIN_INSTALL_TYPE_UPDATE
+  );
 
 export const mapBeEntriesToEntries = (beEntries: BeEntry[]): Entry[] => {
   return beEntries

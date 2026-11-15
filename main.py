@@ -5,6 +5,7 @@ import asyncio
 from bw_cli import BwCli, BwCliError
 from bw_installer import BwInstaller
 from password_manager import PasswordManager
+from updater import Updater
 
 import decky
 
@@ -26,6 +27,7 @@ class Plugin:
             ca_cert_path=os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "ca.pem"),
         )
         self.pm = PasswordManager(decky.logger, self.bw)
+        self.updater = Updater(decky.logger, decky.DECKY_PLUGIN_VERSION)
 
     async def _handle_error(self, error_message: str, exec_info: bool, close_password_manager: bool):
         # Must be called from inside an except block.
@@ -154,6 +156,14 @@ class Plugin:
             await asyncio.wait_for(self.pm.close(), 30)
         except Exception:
             decky.logger.error("Failed to lock vault!")
+
+    async def check_for_update(self, force: bool = False):
+        """Returns [current_version, update or None]."""
+        try:
+            update = await asyncio.wait_for(self.updater.check(force), 30)
+            return [decky.DECKY_PLUGIN_VERSION, update]
+        except Exception:
+            await self._handle_error("Failed to check for updates!", True, False)
 
     async def _main(self):
         decky.logger.info("Loading DeckWarden...")

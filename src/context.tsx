@@ -16,6 +16,8 @@ import {
   syncBe,
   getEntryTotpBe,
   loginPasswordBe,
+  checkForUpdateBe,
+  installUpdate as installUpdateBe,
 } from "./backend";
 import React from "react";
 import {
@@ -29,6 +31,7 @@ import {
   SetupState,
   TotpCode,
   TwoFactorMethod,
+  UpdateState,
 } from "./interfaces";
 
 import { useJsContextState } from "./hooks";
@@ -71,6 +74,9 @@ interface PasswordManagerContextValue {
     code: string | null
   ) => Promise<PasswordLoginResult>;
   logout: () => Promise<void>;
+  updateState: UpdateState | null;
+  checkForUpdates: (force: boolean) => Promise<void>;
+  installUpdate: () => Promise<void>;
 }
 
 const PasswordManagerContext = createContext<PasswordManagerContextValue>({
@@ -90,6 +96,9 @@ const PasswordManagerContext = createContext<PasswordManagerContextValue>({
   login: async () => false,
   loginWithPassword: async () => "error",
   logout: async () => {},
+  updateState: null,
+  checkForUpdates: async () => {},
+  installUpdate: async () => {},
 });
 
 export interface PasswordMangerContextProviderProps {
@@ -112,6 +121,8 @@ export const PasswordMangerContextProvider = (
   );
 
   const [setupState, setSetupState] = useState<SetupState | null>(null);
+
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null);
 
   const [bwInstallState, setBwInstallState] = useState<BwInstallState>("initial");
 
@@ -322,6 +333,43 @@ export const PasswordMangerContextProvider = (
     await reloadSetupState();
   };
 
+  const checkForUpdates = async (force: boolean) => {
+    try {
+      const [currentVersion, update] = await checkForUpdateBe(force);
+      setUpdateState({ currentVersion, update });
+      if (force && !update) {
+        toaster.toast({ title: "DeckWarden", body: `Up to date (v${currentVersion})` });
+      }
+    } catch (e) {
+      // Offline or GitHub unreachable: stay silent unless asked explicitly
+      console.error(e);
+      if (force) {
+        toaster.toast({ title: "DeckWarden Error", body: "Could not check for updates" });
+      }
+    }
+  };
+
+  // Backend caches the result for a few hours, so this is cheap
+  useEffect(() => {
+    checkForUpdates(false);
+  }, []);
+
+  const installUpdate = async () => {
+    const update = updateState?.update;
+    if (!update) {
+      return;
+    }
+    try {
+      await installUpdateBe(update);
+    } catch (e) {
+      console.error(e);
+      toaster.toast({
+        title: "DeckWarden Error",
+        body: "Update failed. Install it via Settings → Developer → Install plugin from URL.",
+      });
+    }
+  };
+
   const value: PasswordManagerContextValue = {
     currentEntries,
     currentEntry,
@@ -339,6 +387,9 @@ export const PasswordMangerContextProvider = (
     login,
     loginWithPassword,
     logout,
+    updateState,
+    checkForUpdates,
+    installUpdate,
   };
 
   return (

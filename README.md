@@ -29,6 +29,9 @@ DeckWarden is **read-only**: create and edit entries in the Vaultwarden web vaul
         - **Personal API key** (`client_id` and `client_secret`), from the web vault under *Account Settings → Security → Keys → View API Key*. Each field has a clipboard button; pasting the whole dialog text fills both fields. Use this if your account uses **FIDO2/WebAuthn or Duo**, which the CLI cannot handle, or if the server asks for **new device verification**
 4. Click **Unlock Vault** and enter your master password
 
+### Updates
+Decky only checks for updates of plugins from its own store, so DeckWarden checks this repository's **latest GitHub release** itself (at most every 6 hours, or with **Check for updates**). When a newer version is out, an **Update** button appears at the top of the plugin. It hands the release ZIP and its SHA-256 to **Decky's own installer**, which asks for confirmation, verifies the hash and replaces the installed version. Your login and settings are kept.
+
 ### Self-signed certificates
 If your Vaultwarden server uses a certificate from a private CA, copy the CA certificate in PEM format to
 `~/homebrew/settings/DeckWarden/ca.pem`. It is passed to the CLI as `NODE_EXTRA_CA_CERTS`.

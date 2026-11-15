@@ -14,6 +14,7 @@ import { ButtonItemIconContent } from "./shared";
 import { isLoggedIn, SetupGuide } from "./setup-guide";
 import { OpenDatabaseModal } from "./modals/open-database-modal";
 import { useJsContextState } from "../hooks";
+import { UpdateBanner, VersionInfo } from "./update-banner";
 import { Entry } from "../interfaces";
 
 const centeredTextStyle: React.CSSProperties = {
@@ -35,6 +36,7 @@ export const PasswordManagerClosed = () => {
 
   return (
     <PanelSection>
+      <UpdateBanner />
       <PanelSectionRow>
         <div
           style={{
@@ -80,6 +82,7 @@ export const PasswordManagerClosed = () => {
         )}
 
         <SetupGuide initiallyOpen={setupState !== null && !loggedIn} />
+        <VersionInfo />
       </PanelSectionRow>
     </PanelSection>
   );
@@ -120,6 +123,7 @@ export const PasswordManagerOpened = () => {
 
   return (
     <PanelSection>
+      <UpdateBanner />
       <PanelSectionRow>
         <ButtonItem
           layout="below"
