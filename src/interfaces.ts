@@ -56,3 +56,13 @@ export type UpdateState = {
   currentVersion: string;
   update: UpdateInfo | null;
 };
+
+export type PinState = {
+  enabled: boolean;
+  hasPin: boolean;
+  pinLocked: boolean;
+  attemptsLeft: number;
+  maxHours: number;
+};
+
+export type PinUnlockResult = "unlocked" | "wrong" | "unavailable";

@@ -16,6 +16,7 @@ If you use KeePassXC rather than Vaultwarden/Bitwarden, use DeckPass. Please con
 - Shows and pastes **TOTP codes** (standard `otpauth://`, raw base32 and Steam Guard `steam://` secrets)
 - **Syncs** the vault on demand
 - **Auto-locks** the vault after a configurable time without use (default 15 minutes)
+- Optional **PIN unlock** after the master password has been entered once
 - Offers **updates** from this repository's GitHub releases
 
 DeckWarden is **read-only**: create and edit entries in the Vaultwarden web vault or the Bitwarden apps.
@@ -30,6 +31,15 @@ DeckWarden is **read-only**: create and edit entries in the Vaultwarden web vaul
         - **Email & master password**. If two-step login is enabled, pick the method (authenticator app, email or YubiKey OTP) and enter the code; for email, use *Send code by email* first. Logging in this way also unlocks the vault
         - **Personal API key** (`client_id` and `client_secret`), from the web vault under *Account Settings → Security → Keys → View API Key*. Each field has a clipboard button; pasting the whole dialog text fills both fields. Use this if your account uses **FIDO2/WebAuthn or Duo**, which the CLI cannot handle, or if the server asks for **new device verification**
 4. Click **Unlock Vault** and enter your master password
+
+### PIN unlock
+Optional, off by default (**Settings → Unlock with PIN**). After you unlock with your master password, DeckWarden asks for a 4 to 8 digit PIN. When the vault then locks (manually or by auto-lock), **Unlock with PIN** gets you back in. The master password is required again:
+- after **5 wrong PINs**,
+- after the chosen time since the last master password unlock (1, 4, 8 or 24 hours, or only on restart; default 8 hours),
+- after a **restart** of the Deck or Decky, since the PIN only lives in memory,
+- when you press **Lock completely** or turn the option off.
+
+The Bitwarden CLI has no PIN support, so DeckWarden implements it the way the Bitwarden apps do; see the security notes below.
 
 ### Updates
 Decky only checks for updates of plugins from its own store, so DeckWarden checks this repository's **latest GitHub release** itself (at most every 6 hours, or with **Check for updates**). When a newer version is out, an **Update** button appears at the top of the plugin. It hands the release ZIP and its SHA-256 to **Decky's own installer**, which asks for confirmation, verifies the hash and replaces the installed version. Your login and settings are kept.
@@ -48,9 +58,10 @@ If your Vaultwarden server uses a certificate from a private CA, copy the CA cer
     1. The API key is only used for the one-time `bw login --apikey`. After that the CLI keeps its own refresh token in its data directory (`~/homebrew/settings/DeckWarden/bw-data`), together with the **encrypted** vault cache, as with any Bitwarden client
 2. The master password and API key are passed to the CLI **through environment variables of the child process, never through command-line arguments**, so they do not show up in the process list. The CLI has no such option for the email address and the one-time two-step code, so these two are passed as arguments, after validation
 3. After unlocking, the **session key** and the decrypted **login items** are kept **only in memory** of the Python backend. **Auto-lock** (Never, 5, 10, 15, 30 or 60 minutes; default 15) is enforced by the backend, so it also works while the Quick Access Menu is closed. Unlocking, opening the plugin, showing or pasting credentials and syncing count as use; the on-screen TOTP refresh does not. TOTP codes are computed in the backend; TOTP secrets are never sent to the frontend. Locking the vault, unloading the plugin or any backend error clears them and runs `bw lock`
-4. DeckWarden deliberately does **not** use `bw serve`, because it exposes an unauthenticated REST API on localhost
-5. After unlocking, the frontend receives a **security token** (`secrets.token_urlsafe(32)`) that every backend call needs, checked with `hmac.compare_digest`. The token is stored in a scoped variable of the plugin's JavaScript module
-6. A malicious program or Decky plugin running as the same user can still read process memory or the CLI data directory under **certain conditions**
+4. **PIN unlock** keeps the CLI **session key in memory** while PIN-locked (decrypted items and the security token are dropped). This is the same trade-off as PIN unlock in the Bitwarden apps: anyone able to read the plugin's memory while PIN-locked could decrypt the vault, just as while it is unlocked. The PIN is stored only as a salted `scrypt` hash in memory and never reaches the CLI. Its protection is the **5-attempt limit** enforced by the backend, not the hash itself: a short PIN is easy to brute-force by someone who can read memory. Leave the option off if that matters to you.
+5. DeckWarden deliberately does **not** use `bw serve`, because it exposes an unauthenticated REST API on localhost
+6. After unlocking, the frontend receives a **security token** (`secrets.token_urlsafe(32)`) that every backend call needs, checked with `hmac.compare_digest`. The token is stored in a scoped variable of the plugin's JavaScript module
+7. A malicious program or Decky plugin running as the same user can still read process memory or the CLI data directory under **certain conditions**
 
 ## Communication between DeckWarden and the Bitwarden CLI
 

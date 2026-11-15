@@ -5,9 +5,15 @@ import {
   showModal,
   findSP,
   TextField,
-  DropdownItem,
 } from "@decky/ui";
-import { FaKey, FaLock, FaLockOpen, FaSignOutAlt, FaSync } from "react-icons/fa";
+import {
+  FaKey,
+  FaLock,
+  FaLockOpen,
+  FaSignOutAlt,
+  FaSync,
+  FaUnlockAlt,
+} from "react-icons/fa";
 import { useEffect, useState } from "react";
 import { usePasswordManagerContext } from "../context";
 import { EntryComponent } from "./entry";
@@ -17,6 +23,8 @@ import { OpenDatabaseModal } from "./modals/open-database-modal";
 import { useJsContextState } from "../hooks";
 import { UpdateBanner, VersionInfo } from "./update-banner";
 import { Entry } from "../interfaces";
+import { SettingsSection } from "./settings-section";
+import { PinUnlockModal } from "./modals/pin-modals";
 
 const centeredTextStyle: React.CSSProperties = {
   textAlign: "center",
@@ -26,37 +34,24 @@ const centeredTextStyle: React.CSSProperties = {
   wordBreak: "break-word",
 };
 
-const autoLockOptions = [
-  { data: 0, label: "Never" },
-  { data: 5, label: "5 minutes" },
-  { data: 10, label: "10 minutes" },
-  { data: 15, label: "15 minutes" },
-  { data: 30, label: "30 minutes" },
-  { data: 60, label: "1 hour" },
-];
-
-const AutoLockSetting = () => {
-  const { autoLockMinutes, setAutoLockMinutes } = usePasswordManagerContext();
-
-  if (autoLockMinutes === null) {
-    return null;
-  }
-
-  return (
-    <DropdownItem
-      label="Auto-lock"
-      description="Lock the vault after this long without using it"
-      rgOptions={autoLockOptions}
-      selectedOption={autoLockMinutes}
-      onChange={(option) => setAutoLockMinutes(option.data)}
-    />
-  );
-};
-
 export const PasswordManagerClosed = () => {
-  const { openPasswordManager, setupState, logout } = usePasswordManagerContext();
+  const {
+    openPasswordManager,
+    setupState,
+    logout,
+    pinState,
+    unlockWithPin,
+    lockCompletely,
+    reloadPinState,
+  } = usePasswordManagerContext();
 
   const loggedIn = isLoggedIn(setupState);
+  const pinLocked = loggedIn && !!pinState?.pinLocked;
+
+  // The PIN may have expired (time limit) while the panel was closed
+  useEffect(() => {
+    reloadPinState();
+  }, []);
 
   const openDatabaseModal = (
     <OpenDatabaseModal onOpen={(password) => openPasswordManager(password)} />
@@ -93,15 +88,42 @@ export const PasswordManagerClosed = () => {
           </div>
         )}
 
+        {pinLocked && (
+          <ButtonItem
+            layout="below"
+            onClick={() =>
+              showModal(
+                <PinUnlockModal
+                  attemptsLeft={pinState?.attemptsLeft ?? 5}
+                  onUnlock={unlockWithPin}
+                />,
+                findSP()
+              )
+            }
+          >
+            <ButtonItemIconContent icon={<FaUnlockAlt />}>
+              Unlock with PIN
+            </ButtonItemIconContent>
+          </ButtonItem>
+        )}
+
         <ButtonItem
           layout="below"
           disabled={!loggedIn}
           onClick={() => showModal(openDatabaseModal, findSP())}
         >
           <ButtonItemIconContent icon={<FaLockOpen />}>
-            Unlock Vault
+            {pinLocked ? "Unlock with master password" : "Unlock Vault"}
           </ButtonItemIconContent>
         </ButtonItem>
+
+        {pinLocked && (
+          <ButtonItem layout="below" onClick={() => lockCompletely()}>
+            <ButtonItemIconContent icon={<FaLock />}>
+              Lock completely
+            </ButtonItemIconContent>
+          </ButtonItem>
+        )}
 
         {loggedIn && (
           <ButtonItem layout="below" onClick={() => logout()}>
@@ -110,7 +132,7 @@ export const PasswordManagerClosed = () => {
         )}
 
         <SetupGuide initiallyOpen={setupState !== null && !loggedIn} />
-        <AutoLockSetting />
+        {loggedIn && <SettingsSection vaultOpen={false} />}
         <VersionInfo />
       </PanelSectionRow>
     </PanelSection>
@@ -175,6 +197,7 @@ export const PasswordManagerOpened = () => {
             {isSyncing ? "Syncing..." : "Sync"}
           </ButtonItemIconContent>
         </ButtonItem>
+        <SettingsSection vaultOpen={true} />
         <div style={{ marginTop: "20px" }}></div>
         {currentEntries.length > 0 && (
           <TextField

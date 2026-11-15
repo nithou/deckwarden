@@ -4,7 +4,7 @@ import asyncio
 
 from bw_cli import BwCli, BwCliError
 from bw_installer import BwInstaller
-from password_manager import PasswordManager
+from password_manager import PasswordManager, PinError
 from updater import Updater
 
 import decky
@@ -13,6 +13,8 @@ from settings import SettingsManager
 AUTO_LOCK_CHOICES = (0, 5, 10, 15, 30, 60)  # minutes; 0 = never
 DEFAULT_AUTO_LOCK_MINUTES = 15
 AUTO_LOCK_CHECK_SECONDS = 20
+PIN_MAX_HOURS_CHOICES = (0, 1, 4, 8, 24)  # hours after a master password unlock; 0 = no limit
+DEFAULT_PIN_MAX_HOURS = 8
 
 
 class Plugin:
@@ -39,13 +41,17 @@ class Plugin:
     async def _handle_error(self, error_message: str, exec_info: bool, close_password_manager: bool):
         # Must be called from inside an except block.
         cause = sys.exc_info()[1]
-        if close_password_manager:
+        # When PIN-locked there is no valid token left to revoke; a stale
+        # call from the UI must not wipe the PIN lock.
+        if close_password_manager and not self.pm.is_pin_locked():
             await self.close_password_manager()
         decky.logger.error(error_message, exc_info=exec_info)
         # bw's own error text (from stderr) never contains secrets we passed
         # in, so surface it to the UI; hide details of any other exception.
         if isinstance(cause, BwCliError):
             raise ValueError(f"{error_message} {cause}") from None
+        if isinstance(cause, PinError):
+            raise ValueError(f"{error_message} (PIN: {cause})") from None
         raise ValueError(error_message) from None
 
     async def check_setup_state(self):
@@ -157,6 +163,66 @@ class Plugin:
             # should not lock everything.
             await self._handle_error("Failed to generate TOTP code!", False, False)
 
+    # ---- PIN unlock ------------------------------------------------------
+
+    def _pin_enabled(self) -> bool:
+        return self.settings.getSetting("pinUnlockEnabled", False) is True
+
+    def _pin_max_hours(self) -> int:
+        value = self.settings.getSetting("pinMaxHours", DEFAULT_PIN_MAX_HOURS)
+        return value if value in PIN_MAX_HOURS_CHOICES else DEFAULT_PIN_MAX_HOURS
+
+    async def _expire_pin_if_needed(self):
+        hours = self._pin_max_hours()
+        if self.pm.is_pin_locked() and hours and self.pm.seconds_since_password_unlock() >= hours * 3600:
+            decky.logger.info(f"PIN unlock expired after {hours} h, locking vault completely")
+            await self.close_password_manager()
+
+    async def get_pin_state(self):
+        """Returns [enabled, has_pin, pin_locked, attempts_left, max_hours]."""
+        await self._expire_pin_if_needed()
+        return [
+            self._pin_enabled(),
+            self.pm.has_pin(),
+            self.pm.is_pin_locked(),
+            self.pm.pin_attempts_left(),
+            self._pin_max_hours(),
+        ]
+
+    async def set_pin_settings(self, enabled: bool, max_hours: int):
+        if max_hours not in PIN_MAX_HOURS_CHOICES:
+            raise ValueError("Unsupported PIN duration")
+        self.settings.setSetting("pinUnlockEnabled", bool(enabled))
+        self.settings.setSetting("pinMaxHours", max_hours)
+        self.settings.commit()
+        if not enabled:
+            await self.pm.remove_pin()
+
+    async def set_pin(self, security_token: str, pin: str):
+        try:
+            if not self._pin_enabled():
+                raise PinError("PIN unlock is disabled.")
+            self.pm.set_pin(security_token, pin)
+        except Exception:
+            await self._handle_error("Failed to set PIN!", False, False)
+
+    async def unlock_with_pin(self, pin: str):
+        try:
+            await self._expire_pin_if_needed()
+            decky.logger.info("Unlocking vault with PIN")
+            return await asyncio.wait_for(self.pm.unlock_with_pin(pin), 120)
+        except Exception:
+            await self._handle_error("Failed to unlock with PIN!", False, False)
+
+    async def lock_vault(self):
+        """User-requested lock: PIN lock when a PIN is set, else full lock."""
+        decky.logger.info("Locking vault")
+        try:
+            await asyncio.wait_for(self.pm.lock(), 30)
+        except Exception:
+            decky.logger.error("Failed to lock vault!")
+        return self.pm.is_pin_locked()
+
     async def close_password_manager(self):
         decky.logger.info("Locking vault")
         try:
@@ -193,8 +259,9 @@ class Plugin:
                 minutes = self._auto_lock_minutes()
                 if minutes and self.pm.is_open() and self.pm.idle_seconds() >= minutes * 60:
                     decky.logger.info(f"Auto-locking vault after {minutes} min of inactivity")
-                    await self.close_password_manager()
-                    await decky.emit("vault_auto_locked")
+                    pin_locked = await self.lock_vault()
+                    await decky.emit("vault_auto_locked", pin_locked)
+                await self._expire_pin_if_needed()
             except Exception:
                 decky.logger.error("Auto-lock check failed", exc_info=True)
 

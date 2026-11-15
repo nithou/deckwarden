@@ -16,6 +16,11 @@ import {
   syncBe,
   getEntryTotpBe,
   touchBe,
+  getPinStateBe,
+  setPinSettingsBe,
+  setPinBe,
+  unlockWithPinBe,
+  lockVaultBe,
   getAutoLockMinutesBe,
   setAutoLockMinutesBe,
   loginPasswordBe,
@@ -35,11 +40,15 @@ import {
   TotpCode,
   TwoFactorMethod,
   UpdateState,
+  PinState,
+  PinUnlockResult,
 } from "./interfaces";
 
 import { clearJsContextState, useJsContextState } from "./hooks";
 import { addEventListener, removeEventListener, toaster } from "@decky/api";
 import { pasteViaKeyboardInput } from "./copy-utils";
+import { findSP, showModal } from "@decky/ui";
+import { SetPinModal } from "./components/modals/pin-modals";
 
 let securityToken = "";
 
@@ -47,10 +56,15 @@ const AUTO_LOCK_EVENT = "vault_auto_locked";
 
 // Module-level: runs even while the panel is closed (unmounted), so a later
 // re-mount doesn't show entries of a vault that is already locked.
-addEventListener(AUTO_LOCK_EVENT, () => {
+addEventListener(AUTO_LOCK_EVENT, (pinLocked: boolean) => {
   securityToken = "";
   clearJsContextState("currentEntries", "currentEntry", "searchQuery");
-  toaster.toast({ title: "DeckWarden", body: "Vault locked after inactivity" });
+  toaster.toast({
+    title: "DeckWarden",
+    body: pinLocked
+      ? "Vault locked after inactivity. Unlock it with your PIN."
+      : "Vault locked after inactivity",
+  });
 });
 
 // Decky rejects backend calls with { pythonTraceback } whose last line is
@@ -58,7 +72,7 @@ addEventListener(AUTO_LOCK_EVENT, () => {
 const getBackendErrorDetail = (e: unknown): string | null => {
   const traceback = (e as { pythonTraceback?: string } | null)?.pythonTraceback;
   const lastLine = traceback?.trim().split("\n").pop() ?? "";
-  const match = lastLine.match(/\(bw .*\)\s*$/);
+  const match = lastLine.match(/\((?:bw |PIN: ).*\)\s*$/);
   return match ? match[0] : null;
 };
 
@@ -70,6 +84,12 @@ interface PasswordManagerContextValue {
   bwInstallState: BwInstallState;
   openPasswordManager: (password: string) => Promise<void>;
   closePasswordManager: () => Promise<void>;
+  lockCompletely: () => Promise<void>;
+  pinState: PinState | null;
+  reloadPinState: () => Promise<PinState | null>;
+  setPinSettings: (enabled: boolean, maxHours: number) => Promise<void>;
+  setPin: (pin: string) => Promise<boolean>;
+  unlockWithPin: (pin: string) => Promise<PinUnlockResult>;
   syncVault: () => Promise<void>;
   pasteEntryDetail: (detail: PasteableDetail) => Promise<void>;
   getEntryTotp: (entryId: string, userAction?: boolean) => Promise<TotpCode>;
@@ -103,6 +123,12 @@ const PasswordManagerContext = createContext<PasswordManagerContextValue>({
   bwInstallState: "initial",
   openPasswordManager: async () => {},
   closePasswordManager: async () => {},
+  lockCompletely: async () => {},
+  pinState: null,
+  reloadPinState: async () => null,
+  setPinSettings: async () => {},
+  setPin: async () => false,
+  unlockWithPin: async () => "unavailable",
   syncVault: async () => {},
   pasteEntryDetail: async () => {},
   getEntryTotp: async () => ({ code: "", remainingSeconds: 0 }),
@@ -179,17 +205,109 @@ export const PasswordMangerContextProvider = (
     });
   };
 
+  const [pinState, setPinState] = useState<PinState | null>(null);
+
+  const reloadPinState = async (): Promise<PinState | null> => {
+    try {
+      const [enabled, hasPin, pinLocked, attemptsLeft, maxHours] = await getPinStateBe();
+      const state = { enabled, hasPin, pinLocked, attemptsLeft, maxHours };
+      setPinState(state);
+      return state;
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    reloadPinState();
+  }, []);
+
+  const setPin = async (pin: string) => {
+    let success = false;
+    await handleErrors(
+      "Failed to set PIN.",
+      async () => {
+        await setPinBe(securityToken, pin);
+        success = true;
+        toaster.toast({ title: "DeckWarden", body: "PIN set" });
+      },
+      false
+    );
+    await reloadPinState();
+    return success;
+  };
+
+  const promptSetPin = () => showModal(<SetPinModal onSetPin={setPin} />, findSP());
+
+  // After a master password unlock, offer to set a PIN if the option is on
+  const afterPasswordUnlock = async () => {
+    const state = await reloadPinState();
+    if (state?.enabled && !state.hasPin) {
+      promptSetPin();
+    }
+  };
+
   const openPasswordManager = async (password: string) =>
     handleErrors("Failed to unlock vault", async () => {
       securityToken = await openPasswordManagerBe(password);
       await reloadEntries();
+      await afterPasswordUnlock();
     });
 
-  const closePasswordManager = async () => {
-    await closePasswordManagerBe();
+  const resetOpenState = async () => {
+    securityToken = "";
     await setCurrentEntries(null);
     await setCurrentEntry(null);
-    securityToken = "";
+    setCurrentEntryDetails(null);
+  };
+
+  // "Lock Vault": PIN lock when a PIN is set, else full lock
+  const closePasswordManager = async () => {
+    await lockVaultBe();
+    await resetOpenState();
+    await reloadPinState();
+  };
+
+  // Forget the session and PIN; the master password will be needed
+  const lockCompletely = async () => {
+    await closePasswordManagerBe();
+    await resetOpenState();
+    await reloadPinState();
+  };
+
+  const unlockWithPin = async (pin: string): Promise<PinUnlockResult> => {
+    let result = "wrong" as PinUnlockResult;
+    await handleErrors(
+      "PIN unlock failed.",
+      async () => {
+        securityToken = await unlockWithPinBe(pin);
+        await reloadEntries();
+        result = "unlocked";
+      },
+      false
+    );
+    const state = await reloadPinState();
+    // Too many attempts or expired: the backend locked completely
+    if (result !== "unlocked" && !state?.pinLocked) {
+      result = "unavailable";
+    }
+    return result;
+  };
+
+  const setPinSettings = async (enabled: boolean, maxHours: number) => {
+    await handleErrors(
+      "Failed to save PIN settings",
+      async () => {
+        await setPinSettingsBe(enabled, maxHours);
+      },
+      false
+    );
+    const state = await reloadPinState();
+    // Turned on while the vault is open: set the PIN right away
+    if (state?.enabled && !state.hasPin && securityToken) {
+      promptSetPin();
+    }
   };
 
   const syncVault = async () =>
@@ -264,6 +382,7 @@ export const PasswordMangerContextProvider = (
       await setCurrentEntries(null);
       await setCurrentEntry(null);
       setCurrentEntryDetails(null);
+      await reloadPinState();
     });
     return () => removeEventListener(AUTO_LOCK_EVENT, listener);
   }, []);
@@ -386,6 +505,7 @@ export const PasswordMangerContextProvider = (
         if (state === "unlocked") {
           securityToken = token;
           await reloadEntries();
+          await afterPasswordUnlock();
         }
         result = state as PasswordLoginResult;
       },
@@ -448,6 +568,12 @@ export const PasswordMangerContextProvider = (
     bwInstallState,
     openPasswordManager,
     closePasswordManager,
+    lockCompletely,
+    pinState,
+    reloadPinState,
+    setPinSettings,
+    setPin,
+    unlockWithPin,
     syncVault,
     pasteEntryDetail,
     getEntryTotp,

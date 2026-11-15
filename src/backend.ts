@@ -25,6 +25,15 @@ export const getEntryTotpBe = callable<[string, string, boolean], [string, numbe
   "get_entry_totp"
 );
 
+export const getPinStateBe = callable<[], [boolean, boolean, boolean, number, number]>(
+  "get_pin_state"
+);
+export const setPinSettingsBe = callable<[boolean, number], void>("set_pin_settings");
+export const setPinBe = callable<[string, string], void>("set_pin");
+export const unlockWithPinBe = callable<[string], string>("unlock_with_pin");
+// PIN lock when a PIN is set, else full lock; resolves to whether PIN-locked
+export const lockVaultBe = callable<[], boolean>("lock_vault");
+
 export const touchBe = callable<[string], void>("touch");
 export const getAutoLockMinutesBe = callable<[], number>("get_auto_lock_minutes");
 export const setAutoLockMinutesBe = callable<[number], void>("set_auto_lock_minutes");
